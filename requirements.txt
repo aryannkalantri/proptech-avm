@@ -1,7 +1,7 @@
 PyMuPDF
 pytesseract
 pandas
-streamlit
+streamlit>=1.38.0
 docxtpl
 google-genai
 Pillow
