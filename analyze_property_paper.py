@@ -5,13 +5,18 @@ Multi-page extraction for PROPERTY PAPER.pdf (10 pages).
 Renders ALL pages as images and sends them together to Gemini 2.5 Flash.
 """
 
+import os
+
 import fitz
 from PIL import Image
 from google import genai
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # ── Configuration ─────────────────────────────────────────────────────────────
 PDF_PATH = "PROPERTY PAPER.pdf"
-API_KEY = "REDACTED"
+API_KEY = os.getenv("GEMINI_API_KEY", "")
 MODEL = "gemini-2.5-flash"
 
 PROMPT = (

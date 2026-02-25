@@ -12,6 +12,9 @@ venv/
 # Test/sample PDFs (too large for git)
 *.pdf
 
+# Proprietary bank templates
+templates/
+
 # Misc
 untitled folder/
 .pytest_cache/

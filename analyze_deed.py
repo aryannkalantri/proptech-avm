@@ -5,13 +5,18 @@ Standalone script to extract property data from 'suresh proparty pepar 3.pdf'
 using PyMuPDF (fitz) for rendering and Gemini 2.5 Flash Vision for extraction.
 """
 
+import os
+
 import fitz  # PyMuPDF
 from PIL import Image
 from google import genai
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # ── Configuration ─────────────────────────────────────────────────────────────
 PDF_PATH = "suresh proparty pepar 3.pdf"
-API_KEY = "REDACTED"
+API_KEY = os.getenv("GEMINI_API_KEY", "")
 MODEL = "gemini-2.5-flash"
 
 PROMPT = (

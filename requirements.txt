@@ -7,3 +7,5 @@ google-genai
 Pillow
 python-dotenv
 openpyxl
+playwright
+pytest-playwright
