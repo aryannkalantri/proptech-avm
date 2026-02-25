@@ -237,6 +237,45 @@ EXTRACTION_PROMPT = (
     "6. ACCURACY IS PARAMOUNT. Do NOT guess or infer — if you cannot read a value clearly, write 'Unclear'."
 )
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Bank template registry — add new banks here
+# ─────────────────────────────────────────────────────────────────────────────
+BANK_CONFIGS = {
+    "Cholamandalam": {
+        "template": "templates/chola_template.xlsx",
+        "output_filename": "chola_valuation_report.xlsx",
+        "cell_map": {
+            "B5":  "customer_name",
+            "B14": "address",
+            "B15": "address",
+            "B22": "land_area",
+            "C22": "land_area",
+            "B33": "dim_east",
+            "B34": "dim_east",
+            "C33": "dim_west",
+            "C34": "dim_west",
+            "D33": "dim_north",
+            "D34": "dim_north",
+            "E33": "dim_south",
+            "E34": "dim_south",
+            "B36": "bound_east",
+            "B37": "bound_east",
+            "C36": "bound_west",
+            "C37": "bound_west",
+            "D36": "bound_north",
+            "D37": "bound_north",
+            "E36": "bound_south",
+            "E37": "bound_south",
+        },
+    },
+    # ── Add more banks below ──────────────────────────────────────────────
+    # "HDFC": {
+    #     "template": "templates/hdfc_template.xlsx",
+    #     "output_filename": "hdfc_valuation_report.xlsx",
+    #     "cell_map": { ... },
+    # },
+}
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Helper functions
@@ -283,38 +322,15 @@ def extract_with_gemini(api_key: str, images: list, model_name: str = "gemini-2.
         raise ValueError(f"Gemini returned non-JSON output: {exc}") from exc
 
 
-def generate_chola_report(extracted_data: dict) -> io.BytesIO:
-    """Generate Excel report in Cholamandalam format."""
-    template_path = "templates/chola_template.xlsx"
-    # Load without data_only=True to preserve formulas
-    wb = openpyxl.load_workbook(template_path)
+def generate_bank_report(bank_key: str, extracted_data: dict) -> io.BytesIO:
+    """Generate Excel report for the selected bank using its config from BANK_CONFIGS."""
+    config = BANK_CONFIGS[bank_key]
+    wb = openpyxl.load_workbook(config["template"])
     ws = wb.active
-    
-    # Map values to specific cells
-    ws["B5"] = extracted_data.get("customer_name", "N/A")
-    ws["B14"] = extracted_data.get("address", "N/A")
-    ws["B15"] = extracted_data.get("address", "N/A") 
-    ws["B22"] = extracted_data.get("land_area", "N/A")
-    ws["C22"] = extracted_data.get("land_area", "N/A")
-    
-    ws["B33"] = extracted_data.get("dim_east", "N/A")
-    ws["B34"] = extracted_data.get("dim_east", "N/A")
-    ws["C33"] = extracted_data.get("dim_west", "N/A")
-    ws["C34"] = extracted_data.get("dim_west", "N/A")
-    ws["D33"] = extracted_data.get("dim_north", "N/A")
-    ws["D34"] = extracted_data.get("dim_north", "N/A")
-    ws["E33"] = extracted_data.get("dim_south", "N/A")
-    ws["E34"] = extracted_data.get("dim_south", "N/A")
-    
-    ws["B36"] = extracted_data.get("bound_east", "N/A")
-    ws["B37"] = extracted_data.get("bound_east", "N/A")
-    ws["C36"] = extracted_data.get("bound_west", "N/A")
-    ws["C37"] = extracted_data.get("bound_west", "N/A")
-    ws["D36"] = extracted_data.get("bound_north", "N/A")
-    ws["D37"] = extracted_data.get("bound_north", "N/A")
-    ws["E36"] = extracted_data.get("bound_south", "N/A")
-    ws["E37"] = extracted_data.get("bound_south", "N/A")
-    
+
+    for cell_ref, data_key in config["cell_map"].items():
+        ws[cell_ref] = extracted_data.get(data_key, "N/A")
+
     out_stream = io.BytesIO()
     wb.save(out_stream)
     out_stream.seek(0)
@@ -675,15 +691,22 @@ if mode == "📄 Single Deed":
                 st.markdown('</div>', unsafe_allow_html=True)
 
                 st.markdown("### 📥 Download Report")
+                bank_names = list(BANK_CONFIGS.keys())
+                selected_bank = st.selectbox(
+                    "Select Bank Template",
+                    bank_names,
+                    key="bank_selector",
+                )
                 try:
-                    excel_data = generate_chola_report(extracted)
+                    config = BANK_CONFIGS[selected_bank]
+                    excel_data = generate_bank_report(selected_bank, extracted)
                     st.download_button(
-                        label="⬇️ Download Chola Valuation Report (.xlsx)",
+                        label=f"⬇️ Download {selected_bank} Report (.xlsx)",
                         data=excel_data,
-                        file_name="chola_valuation_report.xlsx",
+                        file_name=config["output_filename"],
                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                         type="primary",
-                        use_container_width=True
+                        use_container_width=True,
                     )
                 except Exception as e:
                     st.error(f"Failed to generate Excel report: {e}")
