@@ -9,3 +9,6 @@ python-dotenv
 openpyxl
 playwright
 pytest-playwright
+folium
+streamlit-folium
+requests
