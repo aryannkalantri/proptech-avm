@@ -12,8 +12,9 @@ venv/
 # Test/sample PDFs (too large for git)
 *.pdf
 
-# Proprietary bank templates
-templates/
+# Bank templates (allow .xlsx so they deploy to Streamlit Cloud)
+templates/*
+!templates/*.xlsx
 
 # Misc
 untitled folder/
