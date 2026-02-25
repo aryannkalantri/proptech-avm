@@ -42,6 +42,7 @@ def _get_secret(key: str, default: str = "") -> str:
 
 GEMINI_API_KEY = _get_secret("GEMINI_API_KEY")
 DEFAULT_MODEL = _get_secret("GEMINI_MODEL", "gemini-2.5-flash")
+GMAPS_API_KEY = _get_secret("GMAPS_API_KEY")
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Page configuration
@@ -645,8 +646,7 @@ with st.sidebar:
         st.caption("Admin: add `GEMINI_API_KEY` to `.env` file")
 
     st.markdown("---")
-    gmaps_key = os.getenv("GMAPS_API_KEY", "")
-    if gmaps_key:
+    if GMAPS_API_KEY:
         st.success("Maps Engine: Connected ✓", icon="🛰️")
     else:
         st.error("Maps Engine: Not configured", icon="🛰️")
@@ -894,12 +894,12 @@ if mode == "📄 Single Deed":
                     "and asks Gemini to compare it against the deed data."
                 )
 
-                if not gmaps_key:
-                    st.warning("Enter your Google Maps API Key in the sidebar.", icon="🔑")
+                if not GMAPS_API_KEY:
+                    st.warning("Maps Engine not configured (missing key in .env or secrets).", icon="🔑")
                 elif st.button("🔍 Run AI Discrepancy Check", use_container_width=True, key="single_risk_check", type="primary"):
                     with st.spinner("📡 Downloading satellite image…"):
                         try:
-                            sat_img = download_satellite_image(sat_lat, sat_lon, gmaps_key)
+                            sat_img = download_satellite_image(sat_lat, sat_lon, GMAPS_API_KEY)
                             st.session_state["sat_img"] = sat_img
                             st.image(sat_img, caption=f"Satellite @ ({sat_lat:.4f}, {sat_lon:.4f})", use_container_width=True)
                         except Exception as exc:
