@@ -12,7 +12,10 @@ API key is loaded from .env file — end users never touch it.
 import io
 import json
 import os
+import re
 import traceback
+import zipfile
+
 
 import fitz  # PyMuPDF
 from dotenv import load_dotenv
@@ -212,19 +215,25 @@ st.markdown(
 EXTRACTION_PROMPT = (
     "You are an expert Indian real estate data extractor. "
     "I am sending you ALL pages of an Indian property title deed. "
-    "Return ONLY a valid JSON object (no markdown fences) with exactly these keys:\n"
+    "Return ONLY a valid JSON object (no markdown fences). "
+    "IMPORTANT: Every field must be a nested object with exactly two keys: "
+    "'value' (the extracted text) and 'confidence' (strictly 'High', 'Medium', or 'Low').\n"
+    "Use 'Low' if the handwriting is messy, smudged, or barely legible. "
+    "Use 'Medium' if you can read it but are not 100% certain. "
+    "Use 'High' only when the text is clearly readable.\n\n"
+    "Return exactly these keys:\n"
     '{\n'
-    '  "customer_name": "",\n'
-    '  "address": "",\n'
-    '  "land_area": "",\n'
-    '  "dim_east": "",\n'
-    '  "dim_west": "",\n'
-    '  "dim_north": "",\n'
-    '  "dim_south": "",\n'
-    '  "bound_east": "",\n'
-    '  "bound_west": "",\n'
-    '  "bound_north": "",\n'
-    '  "bound_south": ""\n'
+    '  "customer_name": {"value": "", "confidence": "High"},\n'
+    '  "address": {"value": "", "confidence": "High"},\n'
+    '  "land_area": {"value": "", "confidence": "High"},\n'
+    '  "dim_east": {"value": "", "confidence": "High"},\n'
+    '  "dim_west": {"value": "", "confidence": "High"},\n'
+    '  "dim_north": {"value": "", "confidence": "High"},\n'
+    '  "dim_south": {"value": "", "confidence": "High"},\n'
+    '  "bound_east": {"value": "", "confidence": "High"},\n'
+    '  "bound_west": {"value": "", "confidence": "High"},\n'
+    '  "bound_north": {"value": "", "confidence": "High"},\n'
+    '  "bound_south": {"value": "", "confidence": "High"}\n'
     '}\n'
     "CRITICAL ACCURACY INSTRUCTIONS:\n"
     "1. For customer_name, extract the full name of the current buyer/applicant. Format it as: "
@@ -234,7 +243,8 @@ EXTRACTION_PROMPT = (
     "4. For dimensions (dim_east/west/etc.), extract only the dimension value.\n"
     "5. For boundaries (bound_east/west/etc.), extract the name of the neighbor/property on that side. Translate Hindi directions carefully: "
     "उत्तर = North, दक्षिण = South, पूर्व = East, पश्चिम = West.\n"
-    "6. ACCURACY IS PARAMOUNT. Do NOT guess or infer — if you cannot read a value clearly, write 'Unclear'."
+    "6. ACCURACY IS PARAMOUNT. Do NOT guess or infer — if you cannot read a value clearly, "
+    "set value to 'Unclear' and confidence to 'Low'."
 )
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -322,6 +332,35 @@ def extract_with_gemini(api_key: str, images: list, model_name: str = "gemini-2.
         raise ValueError(f"Gemini returned non-JSON output: {exc}") from exc
 
 
+def get_val(data: dict, key: str, default: str = "N/A") -> str:
+    """Safely extract 'value' from nested {value, confidence} or plain string."""
+    field = data.get(key, default)
+    if isinstance(field, dict):
+        return field.get("value", default)
+    return field if field else default
+
+
+def get_conf(data: dict, key: str) -> str:
+    """Get confidence level from nested dict. Defaults to 'High'."""
+    field = data.get(key)
+    if isinstance(field, dict):
+        return field.get("confidence", "High")
+    return "High"
+
+
+def conf_badge(level: str) -> str:
+    """Return colored emoji badge for confidence level."""
+    badges = {"High": "🟢 High", "Medium": "🟡 Medium", "Low": "🔴 Low"}
+    return badges.get(level, "⚪ Unknown")
+
+
+def sanitize_filename(name: str) -> str:
+    """Sanitize a string for use as a filename."""
+    clean = re.sub(r'[^\w\s-]', '', name).strip()
+    clean = re.sub(r'[\s]+', '_', clean)
+    return clean[:50] if clean else "report"
+
+
 def generate_bank_report(bank_key: str, extracted_data: dict) -> io.BytesIO:
     """Generate Excel report for the selected bank using its config from BANK_CONFIGS."""
     config = BANK_CONFIGS[bank_key]
@@ -329,7 +368,7 @@ def generate_bank_report(bank_key: str, extracted_data: dict) -> io.BytesIO:
     ws = wb.active
 
     for cell_ref, data_key in config["cell_map"].items():
-        ws[cell_ref] = extracted_data.get(data_key, "N/A")
+        ws[cell_ref] = get_val(extracted_data, data_key)
 
     out_stream = io.BytesIO()
     wb.save(out_stream)
@@ -469,7 +508,7 @@ def render_chain_timeline(chain: list):
 
     for entry in chain:
         deed = entry["data"]
-        buyer = deed.get("customer_name", "N/A")
+        buyer = get_val(deed, "customer_name")
         seller = "N/A (Hidden in new format)"
         prop_type = ""
         reg_no = ""
@@ -571,7 +610,7 @@ st.markdown("---")
 # ─────────────────────────────────────────────────────────────────────────────
 mode = st.radio(
     "Choose mode",
-    ["📄 Single Deed", "🔗 Chain of Title"],
+    ["📄 Single Deed", "📦 Batch Processing", "🔗 Chain of Title"],
     horizontal=True,
     label_visibility="collapsed",
 )
@@ -674,19 +713,19 @@ if mode == "📄 Single Deed":
                 st.markdown("#### 👤 Customer & Property Summary")
                 import pandas as pd
                 st.table(pd.DataFrame([
-                    {"Field": "Customer Name", "Value": extracted.get("customer_name", "N/A")},
-                    {"Field": "Full Address", "Value": extracted.get("address", "N/A")},
-                    {"Field": "Land Area", "Value": extracted.get("land_area", "N/A")},
+                    {"Field": "Customer Name", "Value": get_val(extracted, "customer_name"), "Confidence": conf_badge(get_conf(extracted, "customer_name"))},
+                    {"Field": "Full Address", "Value": get_val(extracted, "address"), "Confidence": conf_badge(get_conf(extracted, "address"))},
+                    {"Field": "Land Area", "Value": get_val(extracted, "land_area"), "Confidence": conf_badge(get_conf(extracted, "land_area"))},
                 ]))
                 st.markdown('</div>', unsafe_allow_html=True)
 
                 st.markdown('<div class="avm-card">', unsafe_allow_html=True)
                 st.markdown("#### 🧭 Boundaries & Dimensions")
                 st.table(pd.DataFrame([
-                    {"Direction": "East", "Dimension": extracted.get("dim_east", "N/A"), "Neighbour": extracted.get("bound_east", "N/A")},
-                    {"Direction": "West", "Dimension": extracted.get("dim_west", "N/A"), "Neighbour": extracted.get("bound_west", "N/A")},
-                    {"Direction": "North", "Dimension": extracted.get("dim_north", "N/A"), "Neighbour": extracted.get("bound_north", "N/A")},
-                    {"Direction": "South", "Dimension": extracted.get("dim_south", "N/A"), "Neighbour": extracted.get("bound_south", "N/A")},
+                    {"Direction": "East", "Dimension": get_val(extracted, "dim_east"), "Neighbour": get_val(extracted, "bound_east"), "Conf.": conf_badge(get_conf(extracted, "dim_east"))},
+                    {"Direction": "West", "Dimension": get_val(extracted, "dim_west"), "Neighbour": get_val(extracted, "bound_west"), "Conf.": conf_badge(get_conf(extracted, "dim_west"))},
+                    {"Direction": "North", "Dimension": get_val(extracted, "dim_north"), "Neighbour": get_val(extracted, "bound_north"), "Conf.": conf_badge(get_conf(extracted, "dim_north"))},
+                    {"Direction": "South", "Dimension": get_val(extracted, "dim_south"), "Neighbour": get_val(extracted, "bound_south"), "Conf.": conf_badge(get_conf(extracted, "dim_south"))},
                 ]))
                 st.markdown('</div>', unsafe_allow_html=True)
 
@@ -760,7 +799,191 @@ if mode == "📄 Single Deed":
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# MODE 2: CHAIN OF TITLE
+# MODE 2: BATCH PROCESSING
+# ═══════════════════════════════════════════════════════════════════════════════
+elif mode == "📦 Batch Processing":
+
+    st.markdown('<div class="avm-card">', unsafe_allow_html=True)
+    st.markdown('<span class="badge badge-blue">Step 1</span>', unsafe_allow_html=True)
+    st.markdown("### 📦 Upload Multiple Property Documents")
+    st.markdown(
+        "Upload **multiple scanned property deed PDFs** — each will be processed "
+        "individually with confidence scoring, and all reports packaged into a single zip."
+    )
+
+    batch_pdfs = st.file_uploader(
+        "Drop all PDFs here",
+        type=["pdf"],
+        accept_multiple_files=True,
+        label_visibility="collapsed",
+        key="batch_upload",
+    )
+    st.markdown('</div>', unsafe_allow_html=True)
+
+    if batch_pdfs and len(batch_pdfs) > 0:
+
+        st.markdown('<div class="avm-card">', unsafe_allow_html=True)
+        st.markdown('<span class="badge badge-amber">Step 2</span>', unsafe_allow_html=True)
+        st.markdown(f"### 🤖 Batch Extraction — {len(batch_pdfs)} Document{'s' if len(batch_pdfs) > 1 else ''}")
+
+        # Bank selector for batch
+        bank_names = list(BANK_CONFIGS.keys())
+        batch_bank = st.selectbox(
+            "Select Bank Template for all reports",
+            bank_names,
+            key="batch_bank_selector",
+        )
+
+        if not GEMINI_API_KEY:
+            st.error("AI Engine not configured. Please contact the administrator.", icon="🚨")
+        else:
+            if st.button("⚡ Process Batch", use_container_width=True, key="batch_extract"):
+                all_results = []
+                progress_bar = st.progress(0, text="Starting batch extraction…")
+
+                for idx, pdf_file in enumerate(batch_pdfs):
+                    file_label = pdf_file.name
+                    progress_bar.progress(
+                        idx / len(batch_pdfs),
+                        text=f"📄 Processing {file_label} ({idx + 1}/{len(batch_pdfs)})…"
+                    )
+
+                    try:
+                        pdf_bytes = pdf_file.read()
+                        page_images = pdf_to_pil_images(pdf_bytes, dpi=300)
+                        extracted_data, raw_response = extract_with_gemini(
+                            GEMINI_API_KEY, page_images, DEFAULT_MODEL
+                        )
+                        extracted_data["_source_file"] = file_label
+                        extracted_data["_page_count"] = len(page_images)
+                        all_results.append(extracted_data)
+                    except Exception as exc:
+                        st.warning(f"⚠️ Failed to extract from {file_label}: {exc}")
+                        all_results.append({
+                            "_source_file": file_label,
+                            "_error": str(exc),
+                        })
+
+                progress_bar.progress(1.0, text="✅ All documents processed!")
+
+                if all_results:
+                    st.session_state["batch_results"] = all_results
+                    st.session_state["batch_bank"] = batch_bank
+                    successful = sum(1 for r in all_results if "_error" not in r)
+                    st.success(f"✅ Extracted data from {successful}/{len(all_results)} documents!", icon="📦")
+
+        st.markdown('</div>', unsafe_allow_html=True)
+
+        # ── Batch Results ─────────────────────────────────────────────────────
+        if st.session_state.get("batch_results"):
+            batch_results = st.session_state["batch_results"]
+            batch_bank = st.session_state.get("batch_bank", list(BANK_CONFIGS.keys())[0])
+
+            st.markdown("---")
+            st.markdown('<span class="badge badge-green">Results</span>', unsafe_allow_html=True)
+            st.markdown("## 📊 Batch Extraction Results")
+
+            import pandas as pd
+
+            # Show each result in an expander
+            for i, result in enumerate(batch_results):
+                source = result.get("_source_file", f"Document {i+1}")
+
+                if "_error" in result:
+                    with st.expander(f"❌ {source} — FAILED", expanded=False):
+                        st.error(f"Extraction failed: {result['_error']}")
+                    continue
+
+                customer = get_val(result, "customer_name")
+                cust_conf = get_conf(result, "customer_name")
+                with st.expander(f"{conf_badge(cust_conf).split()[0]} {source} — {customer}", expanded=(i == 0)):
+                    st.markdown('<div class="avm-card">', unsafe_allow_html=True)
+                    st.markdown("#### 👤 Customer & Property Summary")
+                    st.table(pd.DataFrame([
+                        {"Field": "Customer Name", "Value": get_val(result, "customer_name"), "Confidence": conf_badge(get_conf(result, "customer_name"))},
+                        {"Field": "Full Address", "Value": get_val(result, "address"), "Confidence": conf_badge(get_conf(result, "address"))},
+                        {"Field": "Land Area", "Value": get_val(result, "land_area"), "Confidence": conf_badge(get_conf(result, "land_area"))},
+                    ]))
+                    st.markdown('</div>', unsafe_allow_html=True)
+
+                    st.markdown('<div class="avm-card">', unsafe_allow_html=True)
+                    st.markdown("#### 🧭 Boundaries & Dimensions")
+                    st.table(pd.DataFrame([
+                        {"Direction": "East", "Dimension": get_val(result, "dim_east"), "Neighbour": get_val(result, "bound_east"), "Conf.": conf_badge(get_conf(result, "dim_east"))},
+                        {"Direction": "West", "Dimension": get_val(result, "dim_west"), "Neighbour": get_val(result, "bound_west"), "Conf.": conf_badge(get_conf(result, "dim_west"))},
+                        {"Direction": "North", "Dimension": get_val(result, "dim_north"), "Neighbour": get_val(result, "bound_north"), "Conf.": conf_badge(get_conf(result, "dim_north"))},
+                        {"Direction": "South", "Dimension": get_val(result, "dim_south"), "Neighbour": get_val(result, "bound_south"), "Conf.": conf_badge(get_conf(result, "dim_south"))},
+                    ]))
+                    st.markdown('</div>', unsafe_allow_html=True)
+
+            # ── Zip Download ──────────────────────────────────────────────────
+            st.markdown("### 📥 Download All Reports")
+            successful_results = [r for r in batch_results if "_error" not in r]
+
+            if successful_results:
+                try:
+                    zip_buffer = io.BytesIO()
+                    with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zf:
+                        for result in successful_results:
+                            customer = get_val(result, "customer_name")
+                            fname = f"{sanitize_filename(customer)}_Valuation.xlsx"
+                            excel_data = generate_bank_report(batch_bank, result)
+                            zf.writestr(fname, excel_data.getvalue())
+
+                    zip_buffer.seek(0)
+                    st.download_button(
+                        label=f"📦 Download All {len(successful_results)} Reports (.zip)",
+                        data=zip_buffer,
+                        file_name="batch_valuation_reports.zip",
+                        mime="application/zip",
+                        type="primary",
+                        use_container_width=True,
+                    )
+                except Exception as e:
+                    st.error(f"Failed to generate zip: {e}")
+            else:
+                st.warning("No successful extractions to download.")
+
+    else:
+        # Idle hero state for Batch mode
+        st.markdown('<div class="avm-card">', unsafe_allow_html=True)
+        st.markdown(
+            """
+            <div style="text-align:center; padding: 3rem 1rem;">
+                <div style="font-size:4rem; margin-bottom:1rem;">📦</div>
+                <h2 style="color:#7eb8f7; margin-bottom:0.5rem;">Batch Processing</h2>
+                <p style="color:#607d8b; max-width:520px; margin:0 auto;">
+                    Upload multiple property deeds at once. The AI will extract data
+                    from each document with confidence scoring, and package all
+                    bank valuation reports into a single downloadable zip file.
+                </p>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+        st.markdown('</div>', unsafe_allow_html=True)
+
+        feat1, feat2, feat3 = st.columns(3)
+        for col, icon, title, desc in [
+            (feat1, "📄", "Multi-Upload", "Process 2-50 deeds in one click"),
+            (feat2, "🎯", "Confidence Scores", "🟢🟡🔴 badges show AI certainty"),
+            (feat3, "📦", "Zip Download", "All reports packaged into one file"),
+        ]:
+            with col:
+                st.markdown(
+                    f"""
+                    <div class="avm-card" style="text-align:center; padding:1.2rem;">
+                        <div style="font-size:2rem;">{icon}</div>
+                        <div style="font-weight:600; color:#7eb8f7; margin:0.4rem 0 0.2rem;">{title}</div>
+                        <div style="font-size:0.82rem; color:#7a90a8;">{desc}</div>
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# MODE 3: CHAIN OF TITLE
 # ═══════════════════════════════════════════════════════════════════════════════
 else:
 
@@ -845,8 +1068,8 @@ else:
 
                 # Summary of chain
                 if chain:
-                    first_buyer = chain[0]["data"].get("customer_name", "N/A")
-                    last_buyer = chain[-1]["data"].get("customer_name", "N/A")
+                    first_buyer = get_val(chain[0]["data"], "customer_name")
+                    last_buyer = get_val(chain[-1]["data"], "customer_name")
                     first_date = chain[0]["date_str"]
                     last_date = chain[-1]["date_str"]
                     st.markdown(
@@ -871,17 +1094,17 @@ else:
                     st.markdown("#### 👤 Customer & Property Summary")
                     import pandas as pd
                     st.table(pd.DataFrame([
-                        {"Field": "Customer Name", "Value": deed.get("customer_name", "N/A")},
-                        {"Field": "Full Address", "Value": deed.get("address", "N/A")},
-                        {"Field": "Land Area", "Value": deed.get("land_area", "N/A")},
+                        {"Field": "Customer Name", "Value": get_val(deed, "customer_name"), "Confidence": conf_badge(get_conf(deed, "customer_name"))},
+                        {"Field": "Full Address", "Value": get_val(deed, "address"), "Confidence": conf_badge(get_conf(deed, "address"))},
+                        {"Field": "Land Area", "Value": get_val(deed, "land_area"), "Confidence": conf_badge(get_conf(deed, "land_area"))},
                     ]))
 
                     st.markdown("#### 🧭 Boundaries & Dimensions")
                     st.table(pd.DataFrame([
-                        {"Direction": "East", "Dimension": deed.get("dim_east", "N/A"), "Neighbour": deed.get("bound_east", "N/A")},
-                        {"Direction": "West", "Dimension": deed.get("dim_west", "N/A"), "Neighbour": deed.get("bound_west", "N/A")},
-                        {"Direction": "North", "Dimension": deed.get("dim_north", "N/A"), "Neighbour": deed.get("bound_north", "N/A")},
-                        {"Direction": "South", "Dimension": deed.get("dim_south", "N/A"), "Neighbour": deed.get("bound_south", "N/A")},
+                        {"Direction": "East", "Dimension": get_val(deed, "dim_east"), "Neighbour": get_val(deed, "bound_east"), "Conf.": conf_badge(get_conf(deed, "dim_east"))},
+                        {"Direction": "West", "Dimension": get_val(deed, "dim_west"), "Neighbour": get_val(deed, "bound_west"), "Conf.": conf_badge(get_conf(deed, "dim_west"))},
+                        {"Direction": "North", "Dimension": get_val(deed, "dim_north"), "Neighbour": get_val(deed, "bound_north"), "Conf.": conf_badge(get_conf(deed, "dim_north"))},
+                        {"Direction": "South", "Dimension": get_val(deed, "dim_south"), "Neighbour": get_val(deed, "bound_south"), "Conf.": conf_badge(get_conf(deed, "dim_south"))},
                     ]))
 
                     st.markdown('</div>', unsafe_allow_html=True)
