@@ -219,27 +219,29 @@ EXTRACTION_PROMPT = (
     "You are an expert Indian real estate data extractor. "
     "I am sending you ALL pages of an Indian property title deed. "
     "Return ONLY a valid JSON object (no markdown fences). "
-    "IMPORTANT: Every field must be a nested object with exactly two keys: "
-    "'value' (the extracted text) and 'confidence' (strictly 'High', 'Medium', or 'Low').\n"
+    "IMPORTANT: Every field must be a nested object with exactly THREE keys: "
+    "'value' (ENGLISH translation/transliteration of the extracted text), "
+    "'value_hi' (the ORIGINAL Hindi/Devanagari text exactly as written in the document), "
+    "and 'confidence' (strictly 'High', 'Medium', or 'Low').\n"
     "Use 'Low' if the handwriting is messy, smudged, or barely legible. "
     "Use 'Medium' if you can read it but are not 100% certain. "
     "Use 'High' only when the text is clearly readable.\n\n"
     "Return exactly these keys:\n"
     '{\n'
-    '  "customer_name": {"value": "", "confidence": "High"},\n'
-    '  "address": {"value": "", "confidence": "High"},\n'
-    '  "land_area": {"value": "", "confidence": "High"},\n'
-    '  "dim_east": {"value": "", "confidence": "High"},\n'
-    '  "dim_west": {"value": "", "confidence": "High"},\n'
-    '  "dim_north": {"value": "", "confidence": "High"},\n'
-    '  "dim_south": {"value": "", "confidence": "High"},\n'
-    '  "bound_east": {"value": "", "confidence": "High"},\n'
-    '  "bound_west": {"value": "", "confidence": "High"},\n'
-    '  "bound_north": {"value": "", "confidence": "High"},\n'
-    '  "bound_south": {"value": "", "confidence": "High"}\n'
+    '  "customer_name": {"value": "English name", "value_hi": "हिंदी नाम", "confidence": "High"},\n'
+    '  "address": {"value": "English address", "value_hi": "हिंदी पता", "confidence": "High"},\n'
+    '  "land_area": {"value": "area in English", "value_hi": "क्षेत्रफल", "confidence": "High"},\n'
+    '  "dim_east": {"value": "", "value_hi": "", "confidence": "High"},\n'
+    '  "dim_west": {"value": "", "value_hi": "", "confidence": "High"},\n'
+    '  "dim_north": {"value": "", "value_hi": "", "confidence": "High"},\n'
+    '  "dim_south": {"value": "", "value_hi": "", "confidence": "High"},\n'
+    '  "bound_east": {"value": "", "value_hi": "", "confidence": "High"},\n'
+    '  "bound_west": {"value": "", "value_hi": "", "confidence": "High"},\n'
+    '  "bound_north": {"value": "", "value_hi": "", "confidence": "High"},\n'
+    '  "bound_south": {"value": "", "value_hi": "", "confidence": "High"}\n'
     '}\n'
     "CRITICAL ACCURACY INSTRUCTIONS:\n"
-    "1. For customer_name, extract the full name of the current buyer/applicant. Format it as: "
+    "1. For customer_name, extract the full name of the current buyer/applicant. Format the English value as: "
     "'Sh./Smt. [First Name] S/O or W/O or D/O [Father/Husband Name]'.\n"
     "2. For address, combine ALL location details into one complete address string.\n"
     "3. For land_area, include both the number and unit (e.g. '784.40 sq.ft').\n"
@@ -247,7 +249,8 @@ EXTRACTION_PROMPT = (
     "5. For boundaries (bound_east/west/etc.), extract the name of the neighbor/property on that side. Translate Hindi directions carefully: "
     "उत्तर = North, दक्षिण = South, पूर्व = East, पश्चिम = West.\n"
     "6. ACCURACY IS PARAMOUNT. Do NOT guess or infer — if you cannot read a value clearly, "
-    "set value to 'Unclear' and confidence to 'Low'."
+    "set value to 'Unclear', value_hi to 'अस्पष्ट', and confidence to 'Low'.\n"
+    "7. If the document is in English only, set value_hi to the same text as value."
 )
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -336,11 +339,19 @@ def extract_with_gemini(api_key: str, images: list, model_name: str = "gemini-2.
 
 
 def get_val(data: dict, key: str, default: str = "N/A") -> str:
-    """Safely extract 'value' from nested {value, confidence} or plain string."""
+    """Safely extract 'value' from nested {value, value_hi, confidence} or plain string."""
     field = data.get(key, default)
     if isinstance(field, dict):
         return field.get("value", default)
     return field if field else default
+
+
+def get_hindi(data: dict, key: str, default: str = "—") -> str:
+    """Extract the original Hindi text from nested dict."""
+    field = data.get(key, default)
+    if isinstance(field, dict):
+        return field.get("value_hi", default)
+    return default
 
 
 def get_conf(data: dict, key: str) -> str:
@@ -634,13 +645,12 @@ with st.sidebar:
         st.caption("Admin: add `GEMINI_API_KEY` to `.env` file")
 
     st.markdown("---")
-    st.markdown("### 🛰️ Satellite Engine")
-    gmaps_key = st.text_input(
-        "Google Maps API Key",
-        value=os.getenv("GMAPS_API_KEY", ""),
-        type="password",
-        help="For satellite imagery. Enter key or set GMAPS_API_KEY in .env",
-    )
+    gmaps_key = os.getenv("GMAPS_API_KEY", "")
+    if gmaps_key:
+        st.success("Maps Engine: Connected ✓", icon="🛰️")
+    else:
+        st.error("Maps Engine: Not configured", icon="🛰️")
+        st.caption("Admin: add `GMAPS_API_KEY` to `.env` file")
 
     st.markdown("---")
     st.markdown(
@@ -791,19 +801,19 @@ if mode == "📄 Single Deed":
                 st.markdown("#### 👤 Customer & Property Summary")
                 import pandas as pd
                 st.table(pd.DataFrame([
-                    {"Field": "Customer Name", "Value": get_val(extracted, "customer_name"), "Confidence": conf_badge(get_conf(extracted, "customer_name"))},
-                    {"Field": "Full Address", "Value": get_val(extracted, "address"), "Confidence": conf_badge(get_conf(extracted, "address"))},
-                    {"Field": "Land Area", "Value": get_val(extracted, "land_area"), "Confidence": conf_badge(get_conf(extracted, "land_area"))},
+                    {"Field": "Customer Name", "English": get_val(extracted, "customer_name"), "Hindi": get_hindi(extracted, "customer_name"), "Conf.": conf_badge(get_conf(extracted, "customer_name"))},
+                    {"Field": "Full Address", "English": get_val(extracted, "address"), "Hindi": get_hindi(extracted, "address"), "Conf.": conf_badge(get_conf(extracted, "address"))},
+                    {"Field": "Land Area", "English": get_val(extracted, "land_area"), "Hindi": get_hindi(extracted, "land_area"), "Conf.": conf_badge(get_conf(extracted, "land_area"))},
                 ]))
                 st.markdown('</div>', unsafe_allow_html=True)
 
                 st.markdown('<div class="avm-card">', unsafe_allow_html=True)
                 st.markdown("#### 🧭 Boundaries & Dimensions")
                 st.table(pd.DataFrame([
-                    {"Direction": "East", "Dimension": get_val(extracted, "dim_east"), "Neighbour": get_val(extracted, "bound_east"), "Conf.": conf_badge(get_conf(extracted, "dim_east"))},
-                    {"Direction": "West", "Dimension": get_val(extracted, "dim_west"), "Neighbour": get_val(extracted, "bound_west"), "Conf.": conf_badge(get_conf(extracted, "dim_west"))},
-                    {"Direction": "North", "Dimension": get_val(extracted, "dim_north"), "Neighbour": get_val(extracted, "bound_north"), "Conf.": conf_badge(get_conf(extracted, "dim_north"))},
-                    {"Direction": "South", "Dimension": get_val(extracted, "dim_south"), "Neighbour": get_val(extracted, "bound_south"), "Conf.": conf_badge(get_conf(extracted, "dim_south"))},
+                    {"Dir.": "East", "Dim. (EN)": get_val(extracted, "dim_east"), "Dim. (HI)": get_hindi(extracted, "dim_east"), "Boundary (EN)": get_val(extracted, "bound_east"), "Boundary (HI)": get_hindi(extracted, "bound_east"), "Conf.": conf_badge(get_conf(extracted, "dim_east"))},
+                    {"Dir.": "West", "Dim. (EN)": get_val(extracted, "dim_west"), "Dim. (HI)": get_hindi(extracted, "dim_west"), "Boundary (EN)": get_val(extracted, "bound_west"), "Boundary (HI)": get_hindi(extracted, "bound_west"), "Conf.": conf_badge(get_conf(extracted, "dim_west"))},
+                    {"Dir.": "North", "Dim. (EN)": get_val(extracted, "dim_north"), "Dim. (HI)": get_hindi(extracted, "dim_north"), "Boundary (EN)": get_val(extracted, "bound_north"), "Boundary (HI)": get_hindi(extracted, "bound_north"), "Conf.": conf_badge(get_conf(extracted, "dim_north"))},
+                    {"Dir.": "South", "Dim. (EN)": get_val(extracted, "dim_south"), "Dim. (HI)": get_hindi(extracted, "dim_south"), "Boundary (EN)": get_val(extracted, "bound_south"), "Boundary (HI)": get_hindi(extracted, "bound_south"), "Conf.": conf_badge(get_conf(extracted, "dim_south"))},
                 ]))
                 st.markdown('</div>', unsafe_allow_html=True)
 
@@ -858,9 +868,15 @@ if mode == "📄 Single Deed":
                 st.markdown('<div class="avm-card">', unsafe_allow_html=True)
                 st.markdown("### 🗺️ Satellite Map Preview")
                 m = folium.Map(location=[sat_lat, sat_lon], zoom_start=18)
+                # Satellite imagery base layer
                 folium.TileLayer(
                     tiles="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
                     attr="Esri", name="Satellite", overlay=False,
+                ).add_to(m)
+                # Labels overlay (roads, areas, landmarks)
+                folium.TileLayer(
+                    tiles="https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}",
+                    attr="Esri", name="Labels", overlay=True,
                 ).add_to(m)
                 folium.Marker(
                     [sat_lat, sat_lon],
@@ -1067,19 +1083,19 @@ elif mode == "📦 Batch Processing":
                     st.markdown('<div class="avm-card">', unsafe_allow_html=True)
                     st.markdown("#### 👤 Customer & Property Summary")
                     st.table(pd.DataFrame([
-                        {"Field": "Customer Name", "Value": get_val(result, "customer_name"), "Confidence": conf_badge(get_conf(result, "customer_name"))},
-                        {"Field": "Full Address", "Value": get_val(result, "address"), "Confidence": conf_badge(get_conf(result, "address"))},
-                        {"Field": "Land Area", "Value": get_val(result, "land_area"), "Confidence": conf_badge(get_conf(result, "land_area"))},
+                        {"Field": "Customer Name", "English": get_val(result, "customer_name"), "Hindi": get_hindi(result, "customer_name"), "Conf.": conf_badge(get_conf(result, "customer_name"))},
+                        {"Field": "Full Address", "English": get_val(result, "address"), "Hindi": get_hindi(result, "address"), "Conf.": conf_badge(get_conf(result, "address"))},
+                        {"Field": "Land Area", "English": get_val(result, "land_area"), "Hindi": get_hindi(result, "land_area"), "Conf.": conf_badge(get_conf(result, "land_area"))},
                     ]))
                     st.markdown('</div>', unsafe_allow_html=True)
 
                     st.markdown('<div class="avm-card">', unsafe_allow_html=True)
                     st.markdown("#### 🧭 Boundaries & Dimensions")
                     st.table(pd.DataFrame([
-                        {"Direction": "East", "Dimension": get_val(result, "dim_east"), "Neighbour": get_val(result, "bound_east"), "Conf.": conf_badge(get_conf(result, "dim_east"))},
-                        {"Direction": "West", "Dimension": get_val(result, "dim_west"), "Neighbour": get_val(result, "bound_west"), "Conf.": conf_badge(get_conf(result, "dim_west"))},
-                        {"Direction": "North", "Dimension": get_val(result, "dim_north"), "Neighbour": get_val(result, "bound_north"), "Conf.": conf_badge(get_conf(result, "dim_north"))},
-                        {"Direction": "South", "Dimension": get_val(result, "dim_south"), "Neighbour": get_val(result, "bound_south"), "Conf.": conf_badge(get_conf(result, "dim_south"))},
+                        {"Dir.": "East", "Dim. (EN)": get_val(result, "dim_east"), "Dim. (HI)": get_hindi(result, "dim_east"), "Boundary (EN)": get_val(result, "bound_east"), "Boundary (HI)": get_hindi(result, "bound_east"), "Conf.": conf_badge(get_conf(result, "dim_east"))},
+                        {"Dir.": "West", "Dim. (EN)": get_val(result, "dim_west"), "Dim. (HI)": get_hindi(result, "dim_west"), "Boundary (EN)": get_val(result, "bound_west"), "Boundary (HI)": get_hindi(result, "bound_west"), "Conf.": conf_badge(get_conf(result, "dim_west"))},
+                        {"Dir.": "North", "Dim. (EN)": get_val(result, "dim_north"), "Dim. (HI)": get_hindi(result, "dim_north"), "Boundary (EN)": get_val(result, "bound_north"), "Boundary (HI)": get_hindi(result, "bound_north"), "Conf.": conf_badge(get_conf(result, "dim_north"))},
+                        {"Dir.": "South", "Dim. (EN)": get_val(result, "dim_south"), "Dim. (HI)": get_hindi(result, "dim_south"), "Boundary (EN)": get_val(result, "bound_south"), "Boundary (HI)": get_hindi(result, "bound_south"), "Conf.": conf_badge(get_conf(result, "dim_south"))},
                     ]))
                     st.markdown('</div>', unsafe_allow_html=True)
 
@@ -1261,17 +1277,17 @@ else:
                     st.markdown("#### 👤 Customer & Property Summary")
                     import pandas as pd
                     st.table(pd.DataFrame([
-                        {"Field": "Customer Name", "Value": get_val(deed, "customer_name"), "Confidence": conf_badge(get_conf(deed, "customer_name"))},
-                        {"Field": "Full Address", "Value": get_val(deed, "address"), "Confidence": conf_badge(get_conf(deed, "address"))},
-                        {"Field": "Land Area", "Value": get_val(deed, "land_area"), "Confidence": conf_badge(get_conf(deed, "land_area"))},
+                        {"Field": "Customer Name", "English": get_val(deed, "customer_name"), "Hindi": get_hindi(deed, "customer_name"), "Conf.": conf_badge(get_conf(deed, "customer_name"))},
+                        {"Field": "Full Address", "English": get_val(deed, "address"), "Hindi": get_hindi(deed, "address"), "Conf.": conf_badge(get_conf(deed, "address"))},
+                        {"Field": "Land Area", "English": get_val(deed, "land_area"), "Hindi": get_hindi(deed, "land_area"), "Conf.": conf_badge(get_conf(deed, "land_area"))},
                     ]))
 
                     st.markdown("#### 🧭 Boundaries & Dimensions")
                     st.table(pd.DataFrame([
-                        {"Direction": "East", "Dimension": get_val(deed, "dim_east"), "Neighbour": get_val(deed, "bound_east"), "Conf.": conf_badge(get_conf(deed, "dim_east"))},
-                        {"Direction": "West", "Dimension": get_val(deed, "dim_west"), "Neighbour": get_val(deed, "bound_west"), "Conf.": conf_badge(get_conf(deed, "dim_west"))},
-                        {"Direction": "North", "Dimension": get_val(deed, "dim_north"), "Neighbour": get_val(deed, "bound_north"), "Conf.": conf_badge(get_conf(deed, "dim_north"))},
-                        {"Direction": "South", "Dimension": get_val(deed, "dim_south"), "Neighbour": get_val(deed, "bound_south"), "Conf.": conf_badge(get_conf(deed, "dim_south"))},
+                        {"Dir.": "East", "Dim. (EN)": get_val(deed, "dim_east"), "Dim. (HI)": get_hindi(deed, "dim_east"), "Boundary (EN)": get_val(deed, "bound_east"), "Boundary (HI)": get_hindi(deed, "bound_east"), "Conf.": conf_badge(get_conf(deed, "dim_east"))},
+                        {"Dir.": "West", "Dim. (EN)": get_val(deed, "dim_west"), "Dim. (HI)": get_hindi(deed, "dim_west"), "Boundary (EN)": get_val(deed, "bound_west"), "Boundary (HI)": get_hindi(deed, "bound_west"), "Conf.": conf_badge(get_conf(deed, "dim_west"))},
+                        {"Dir.": "North", "Dim. (EN)": get_val(deed, "dim_north"), "Dim. (HI)": get_hindi(deed, "dim_north"), "Boundary (EN)": get_val(deed, "bound_north"), "Boundary (HI)": get_hindi(deed, "bound_north"), "Conf.": conf_badge(get_conf(deed, "dim_north"))},
+                        {"Dir.": "South", "Dim. (EN)": get_val(deed, "dim_south"), "Dim. (HI)": get_hindi(deed, "dim_south"), "Boundary (EN)": get_val(deed, "bound_south"), "Boundary (HI)": get_hindi(deed, "bound_south"), "Conf.": conf_badge(get_conf(deed, "dim_south"))},
                     ]))
 
                     st.markdown('</div>', unsafe_allow_html=True)
