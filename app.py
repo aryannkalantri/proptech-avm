@@ -23,6 +23,9 @@ from google import genai
 import streamlit as st
 from PIL import Image
 import openpyxl
+import requests
+import folium
+from streamlit_folium import st_folium
 
 # ── Load configuration ────────────────────────────────────────────────────────
 # Priority: st.secrets (Streamlit Cloud) > .env file (local) > empty
@@ -361,6 +364,72 @@ def sanitize_filename(name: str) -> str:
     return clean[:50] if clean else "report"
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# Satellite Discrepancy Engine
+# ─────────────────────────────────────────────────────────────────────────────
+DISCREPANCY_PROMPT = (
+    "You are a PropTech Risk Officer. I am giving you:\n"
+    "1. The extracted details of a property deed (JSON below)\n"
+    "2. A current satellite image of the property coordinates\n\n"
+    "DEED DATA:\n{deed_json}\n\n"
+    "Compare them and produce a DISCREPANCY REPORT. Analyze carefully:\n"
+    "- Does the deed describe empty/vacant land while the satellite shows a built structure (or vice versa)?\n"
+    "- Are there obvious boundary discrepancies or encroachments visible?\n"
+    "- Any signs of unauthorized construction, environmental risk, or flood-prone terrain?\n"
+    "- Does the visible plot size roughly match the deed's land area?\n\n"
+    "Output EXACTLY in this format:\n"
+    "RISK LEVEL: [HIGH / MEDIUM / LOW / NONE]\n"
+    "FINDINGS:\n"
+    "- [finding 1]\n"
+    "- [finding 2]\n"
+    "- ...\n"
+    "RECOMMENDATION: [one-line action item for the bank valuer]"
+)
+
+
+def download_satellite_image(lat: float, lon: float, api_key: str, zoom: int = 20) -> Image.Image:
+    """Download satellite image from Google Maps Static API."""
+    url = (
+        f"https://maps.googleapis.com/maps/api/staticmap"
+        f"?center={lat},{lon}"
+        f"&zoom={zoom}"
+        f"&size=600x600"
+        f"&maptype=satellite"
+        f"&key={api_key}"
+    )
+    resp = requests.get(url, timeout=15)
+    resp.raise_for_status()
+    return Image.open(io.BytesIO(resp.content))
+
+
+def run_discrepancy_check(api_key: str, satellite_img: Image.Image, deed_data: dict) -> str:
+    """Send satellite image + deed JSON to Gemini for risk analysis."""
+    client = genai.Client(api_key=api_key)
+    clean_data = {}
+    for key in ["customer_name", "address", "land_area",
+                 "dim_east", "dim_west", "dim_north", "dim_south",
+                 "bound_east", "bound_west", "bound_north", "bound_south"]:
+        clean_data[key] = get_val(deed_data, key)
+    prompt = DISCREPANCY_PROMPT.format(deed_json=json.dumps(clean_data, indent=2))
+    response = client.models.generate_content(
+        model="gemini-2.5-flash",
+        contents=[prompt, satellite_img],
+    )
+    return response.text.strip()
+
+
+def parse_risk_level(report: str) -> str:
+    """Extract risk level from the discrepancy report."""
+    report_upper = report.upper()
+    if "RISK LEVEL: HIGH" in report_upper or "RISK LEVEL:HIGH" in report_upper:
+        return "HIGH"
+    elif "RISK LEVEL: MEDIUM" in report_upper or "RISK LEVEL:MEDIUM" in report_upper:
+        return "MEDIUM"
+    elif "RISK LEVEL: LOW" in report_upper or "RISK LEVEL:LOW" in report_upper:
+        return "LOW"
+    return "NONE"
+
+
 def generate_bank_report(bank_key: str, extracted_data: dict) -> io.BytesIO:
     """Generate Excel report for the selected bank using its config from BANK_CONFIGS."""
     config = BANK_CONFIGS[bank_key]
@@ -565,6 +634,15 @@ with st.sidebar:
         st.caption("Admin: add `GEMINI_API_KEY` to `.env` file")
 
     st.markdown("---")
+    st.markdown("### 🛰️ Satellite Engine")
+    gmaps_key = st.text_input(
+        "Google Maps API Key",
+        value=os.getenv("GMAPS_API_KEY", ""),
+        type="password",
+        help="For satellite imagery. Enter key or set GMAPS_API_KEY in .env",
+    )
+
+    st.markdown("---")
     st.markdown(
         """
         **Modes**
@@ -757,6 +835,95 @@ if mode == "📄 Single Deed":
             with tab_raw:
                 st.markdown("#### Raw model response (pre-parse)")
                 st.code(st.session_state.get("raw_response", ""), language="json")
+
+            # ── SATELLITE RISK ANALYSIS ───────────────────────────────────────
+            st.markdown("---")
+            st.markdown('<span class="badge badge-red">Risk Engine</span>', unsafe_allow_html=True)
+            st.markdown("## 🛰️ Risk Analysis: Satellite vs. Deed")
+
+            st.markdown('<div class="avm-card">', unsafe_allow_html=True)
+            st.markdown("### 📍 Property Coordinates")
+            st.markdown("Enter the latitude and longitude of the property to view satellite imagery and run risk analysis.")
+
+            coord_col1, coord_col2 = st.columns(2)
+            with coord_col1:
+                sat_lat = st.number_input("Latitude", value=26.9124, format="%.6f", key="single_lat")
+            with coord_col2:
+                sat_lon = st.number_input("Longitude", value=75.7873, format="%.6f", key="single_lon")
+            st.markdown('</div>', unsafe_allow_html=True)
+
+            map_col, action_col = st.columns([1.5, 1])
+
+            with map_col:
+                st.markdown('<div class="avm-card">', unsafe_allow_html=True)
+                st.markdown("### 🗺️ Satellite Map Preview")
+                m = folium.Map(location=[sat_lat, sat_lon], zoom_start=18)
+                folium.TileLayer(
+                    tiles="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+                    attr="Esri", name="Satellite", overlay=False,
+                ).add_to(m)
+                folium.Marker(
+                    [sat_lat, sat_lon],
+                    popup=f"Property: {get_val(extracted, 'address')}",
+                    icon=folium.Icon(color="red", icon="home"),
+                ).add_to(m)
+                st_folium(m, width=700, height=400, key="single_map")
+                st.markdown('</div>', unsafe_allow_html=True)
+
+            with action_col:
+                st.markdown('<div class="avm-card">', unsafe_allow_html=True)
+                st.markdown("### 🔍 AI Discrepancy Check")
+                st.markdown(
+                    "Downloads a high-res satellite image from Google Maps "
+                    "and asks Gemini to compare it against the deed data."
+                )
+
+                if not gmaps_key:
+                    st.warning("Enter your Google Maps API Key in the sidebar.", icon="🔑")
+                elif st.button("🔍 Run AI Discrepancy Check", use_container_width=True, key="single_risk_check", type="primary"):
+                    with st.spinner("📡 Downloading satellite image…"):
+                        try:
+                            sat_img = download_satellite_image(sat_lat, sat_lon, gmaps_key)
+                            st.session_state["sat_img"] = sat_img
+                            st.image(sat_img, caption=f"Satellite @ ({sat_lat:.4f}, {sat_lon:.4f})", use_container_width=True)
+                        except Exception as exc:
+                            st.error(f"Failed to download satellite image: {exc}")
+                            sat_img = None
+
+                    if sat_img:
+                        with st.spinner("🤖 Running AI discrepancy analysis…"):
+                            try:
+                                report = run_discrepancy_check(GEMINI_API_KEY, sat_img, extracted)
+                                st.session_state["risk_report"] = report
+                            except Exception as exc:
+                                st.error(f"AI analysis failed: {exc}")
+                                with st.expander("Details"):
+                                    st.code(traceback.format_exc())
+
+                st.markdown('</div>', unsafe_allow_html=True)
+
+            # ── Discrepancy Report ────────────────────────────────────────────
+            if st.session_state.get("risk_report"):
+                report = st.session_state["risk_report"]
+                risk_level = parse_risk_level(report)
+
+                st.markdown("---")
+                st.markdown('<span class="badge badge-red">Report</span>', unsafe_allow_html=True)
+                st.markdown("## 📋 Discrepancy Report")
+
+                st.markdown('<div class="avm-card">', unsafe_allow_html=True)
+                if risk_level == "HIGH":
+                    st.error("🚨 RISK LEVEL: HIGH — Significant discrepancies detected", icon="🚨")
+                elif risk_level == "MEDIUM":
+                    st.warning("⚠️ RISK LEVEL: MEDIUM — Some concerns require verification", icon="⚠️")
+                else:
+                    st.info(f"✅ RISK LEVEL: {risk_level} — No significant discrepancies", icon="✅")
+                st.markdown(report)
+                st.markdown('</div>', unsafe_allow_html=True)
+
+                if st.session_state.get("sat_img"):
+                    with st.expander("🛰️ Satellite Image Used for Analysis"):
+                        st.image(st.session_state["sat_img"], caption="Google Maps Static API — Satellite View")
 
     else:
         # Idle hero state
