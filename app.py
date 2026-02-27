@@ -61,11 +61,24 @@ st.set_page_config(
 st.markdown(
     """
     <style>
-    /* ── LIGHT MODE & RESPONSIVENESS ── */
+    /* ── DARK MODE METRIC CARD DASHBOARD ── */
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 
     html, body, [class*="css"] {
         font-family: 'Inter', sans-serif;
+    }
+
+    /* Remove default white backgrounds from containers */
+    [data-testid="stAppViewContainer"] { background-color: #0E1117; }
+    [data-testid="stHeader"] { background-color: rgba(0,0,0,0); }
+    [data-testid="stToolbar"] { right: 2rem; }
+    
+    /* Remove ugly borders from expanders and tables */
+    div[data-testid="stExpander"] { 
+        border: none; 
+        box-shadow: none; 
+        background-color: #161B22; 
+        border-radius: 10px; 
     }
 
     /* Reduce Streamlit's huge default horizontal spacing on desktop, and tighten on mobile */
@@ -77,36 +90,7 @@ st.markdown(
         padding-right: clamp(1rem, 5vw, 3rem) !important;
     }
 
-    /* Main Background - Light Mode */
-    .stApp {
-        background: #f8f9fc;
-        color: #1a202c;
-    }
-
-    /* Sidebar - Light Mode */
-    [data-testid="stSidebar"] {
-        background: #ffffff;
-        border-right: 1px solid #e2e8f0;
-    }
-    [data-testid="stSidebar"] h1,
-    [data-testid="stSidebar"] h2,
-    [data-testid="stSidebar"] h3,
-    [data-testid="stSidebar"] span,
-    [data-testid="stSidebar"] p {
-        color: #2d3748 !important;
-    }
-
-    /* Glassmorphism cards - Light Mode */
-    .avm-card {
-        background: #ffffff;
-        border: 1px solid #e2e8f0;
-        border-radius: 16px;
-        padding: clamp(1.2rem, 3vw, 2rem);
-        margin-bottom: 1.6rem;
-        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
-    }
-
-    /* Status badge - Light Mode */
+    /* Status badge - Dark Mode */
     .badge {
         display: inline-block;
         padding: 0.25rem 0.85rem;
@@ -117,9 +101,10 @@ st.markdown(
         text-transform: uppercase;
         margin-bottom: 0.6rem;
     }
-    .badge-blue  { background: #ebf4ff; color: #3182ce; border: 1px solid #bee3f8; }
-    .badge-green { background: #f0fff4; color: #38a169; border: 1px solid #c6f6d5; }
-    .badge-amber { background: #fffaf0; color: #dd6b20; border: 1px solid #feebc8; }
+    .badge-blue  { background: #1e3a8a; color: #bfdbfe; border: 1px solid #3b82f6; }
+    .badge-green { background: #064e3b; color: #a7f3d0; border: 1px solid #10b981; }
+    .badge-amber { background: #78350f; color: #fde68a; border: 1px solid #f59e0b; }
+    .badge-red   { background: #7f1d1d; color: #fecaca; border: 1px solid #ef4444; }
 
     /* Buttons */
     .stButton > button {
@@ -135,38 +120,13 @@ st.markdown(
         color: white;
     }
 
-    /* Headings - Light Mode & responsive */
-    h1 { color: #1a202c !important; font-weight: 700 !important; font-size: clamp(2rem, 5vw, 2.5rem) !important; }
-    h2 { color: #2d3748 !important; font-weight: 600 !important; font-size: clamp(1.5rem, 4vw, 2rem) !important; }
-    h3 { color: #4a5568 !important; font-size: clamp(1.2rem, 3vw, 1.5rem) !important;}
-    p, span, div { color: #4a5568; }
+    /* Headings - Dark Mode & responsive */
+    h1 { color: #f8fafc !important; font-weight: 700 !important; font-size: clamp(2rem, 5vw, 2.5rem) !important; }
+    h2 { color: #e2e8f0 !important; font-weight: 600 !important; font-size: clamp(1.5rem, 4vw, 2rem) !important; }
+    h3 { color: #cbd5e0 !important; font-size: clamp(1.2rem, 3vw, 1.5rem) !important;}
+    p, span, div { color: #cbd5e0; }
 
-    /* JSON viewer */
-    [data-testid="stJson"] {
-        background: #f7fafc !important;
-        border: 1px solid #e2e8f0 !important;
-        border-radius: 10px !important;
-        font-size: 0.88rem !important;
-    }
 
-    /* Table */
-    [data-testid="stTable"] table {
-        background: #ffffff;
-        border-radius: 10px;
-        border: 1px solid #e2e8f0;
-        border-collapse: collapse;
-        width: 100%;
-    }
-    [data-testid="stTable"] th {
-        background: #f7fafc !important;
-        color: #4a5568 !important;
-        font-weight: 600 !important;
-        border-bottom: 2px solid #e2e8f0;
-    }
-    [data-testid="stTable"] td { 
-        color: #2d3748 !important; 
-        border-bottom: 1px solid #edf2f7;
-    }
 
     /* Alerts */
     .stSuccess { background: #f0fff4 !important; border: 1px solid #c6f6d5 !important; border-radius: 8px; color: #276749 !important; }
@@ -947,13 +907,63 @@ if mode == "📄 Single Deed":
                 ]))
                 st.markdown('</div>', unsafe_allow_html=True)
 
+                # Download button is now outside of tabs and inside a clean full-width container
+                st.markdown("---")
                 st.markdown("### 📥 Download Report")
+                
+                col_bank, _ = st.columns([1, 1])
+                with col_bank:
+                    bank_names = list(BANK_CONFIGS.keys())
+                    selected_bank = st.selectbox(
+                        "Select Bank Template",
+                        bank_names,
+                        key="bank_selector",
+                    )
+                
+                download_container = st.container()
+            st.markdown("### ✨ Key Property Metrics")
+            col1, col2, col3, col4 = st.columns(4)
+            with col1:
+                st.metric(label=f"👤 Borrower {conf_badge(get_conf(extracted, 'customer_name'))}", value=get_val(extracted, "customer_name") or "N/A")
+            with col2:
+                st.metric(label=f"📏 Total Land Area {conf_badge(get_conf(extracted, 'land_area'))}", value=get_val(extracted, "land_area") or "N/A")
+            with col3:
+                st.metric(label="🏠 Property Type", value="N/A")
+            with col4:
+                st.metric(label="📅 Date of Visit", value="N/A")
+
+            st.markdown("---")
+
+            col_add, col_bound = st.columns([2, 1])
+            
+            with col_add:
+                st.markdown(f"### 📍 Property Address {conf_badge(get_conf(extracted, 'address'))}")
+                st.info(get_val(extracted, "address") or "No address extracted.")
+                
+            with col_bound:
+                st.markdown("### 🧭 Boundaries")
+                st.markdown(f"""
+                - **North:** {get_val(extracted, 'bound_north') or 'N/A'} {conf_badge(get_conf(extracted, 'bound_north'))}
+                - **South:** {get_val(extracted, 'bound_south') or 'N/A'} {conf_badge(get_conf(extracted, 'bound_south'))}
+                - **East:** {get_val(extracted, 'bound_east') or 'N/A'} {conf_badge(get_conf(extracted, 'bound_east'))}
+                - **West:** {get_val(extracted, 'bound_west') or 'N/A'} {conf_badge(get_conf(extracted, 'bound_west'))}
+                """)
+                
+            # Download button is now outside of tabs and inside a clean full-width container
+            st.markdown("---")
+            st.markdown("### 📥 Download Report")
+            
+            col_bank, _ = st.columns([1, 1])
+            with col_bank:
                 bank_names = list(BANK_CONFIGS.keys())
                 selected_bank = st.selectbox(
                     "Select Bank Template",
                     bank_names,
                     key="bank_selector",
                 )
+            
+            download_container = st.container()
+            with download_container:
                 try:
                     config = BANK_CONFIGS[selected_bank]
                     excel_data = generate_bank_report(selected_bank, extracted)
@@ -967,14 +977,6 @@ if mode == "📄 Single Deed":
                     )
                 except Exception as e:
                     st.error(f"Failed to generate Excel report: {e}")
-
-            with tab_json:
-                st.markdown("#### Structured JSON Output")
-                st.json(extracted)
-
-            with tab_raw:
-                st.markdown("#### Raw model response (pre-parse)")
-                st.code(st.session_state.get("raw_response", ""), language="json")
 
             # ── SATELLITE RISK ANALYSIS ───────────────────────────────────────
         
