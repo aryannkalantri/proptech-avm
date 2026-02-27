@@ -774,7 +774,7 @@ with st.sidebar:
         st.error("AI Engine: Not configured", icon="🚨")
         st.caption("Admin: add `GEMINI_API_KEY` to `.env` file")
 
-    st.markdown("---")
+
     if GMAPS_API_KEY:
         st.success("Maps Engine: Connected ✓", icon="🛰️")
     else:
@@ -787,7 +787,7 @@ with st.sidebar:
         st.error("Mapbox Engine: Not configured", icon="🌍")
         st.caption("Admin: add `MAPBOX_API_KEY` to `.env` file")
 
-    st.markdown("---")
+
     st.markdown(
         """
         **Modes**
@@ -811,7 +811,7 @@ with st.sidebar:
         *Handles printed and handwritten Hindi*
         """
     )
-    st.markdown("---")
+
     st.caption(f"Model: `{DEFAULT_MODEL}` · Antigravity PropTech v3.0")
 
 
@@ -918,7 +918,7 @@ if mode == "📄 Single Deed":
         if st.session_state.get("extracted_data"):
             extracted = st.session_state["extracted_data"]
 
-            st.markdown("---")
+        
             st.markdown('<span class="badge badge-green">Results</span>', unsafe_allow_html=True)
             st.markdown("## 📊 Extracted Property Data")
 
@@ -977,7 +977,7 @@ if mode == "📄 Single Deed":
                 st.code(st.session_state.get("raw_response", ""), language="json")
 
             # ── SATELLITE RISK ANALYSIS ───────────────────────────────────────
-            st.markdown("---")
+        
             st.markdown('<span class="badge badge-red">Risk Engine</span>', unsafe_allow_html=True)
             st.markdown("## 🛰️ Risk Analysis: Satellite vs. Deed")
 
@@ -1059,7 +1059,7 @@ if mode == "📄 Single Deed":
                 report = st.session_state["risk_report"]
                 risk_level = parse_risk_level(report)
 
-                st.markdown("---")
+            
                 st.markdown('<span class="badge badge-red">Report</span>', unsafe_allow_html=True)
                 st.markdown("## 📋 Discrepancy Report")
 
@@ -1137,10 +1137,18 @@ elif mode == "🌍 Property Insights (No Deed)":
         key="insights_upload"
     )
 
+    # Allow camera input for mobile users
+    camera_img_file = st.camera_input(
+        "📷 Or take a picture directly", 
+        key="insights_camera"
+    )
+
     ground_image = None
-    if ground_img_file:
+    active_img_file = camera_img_file or ground_img_file
+
+    if active_img_file:
         try:
-            ground_image = Image.open(ground_img_file)
+            ground_image = Image.open(active_img_file)
             st.image(ground_image, caption="Uploaded Property Photo", use_container_width=True)
             
             # Try to extract GPS from EXIF
@@ -1283,7 +1291,7 @@ elif mode == "📦 Batch Processing":
             batch_results = st.session_state["batch_results"]
             batch_bank = st.session_state.get("batch_bank", list(BANK_CONFIGS.keys())[0])
 
-            st.markdown("---")
+        
             st.markdown('<span class="badge badge-green">Results</span>', unsafe_allow_html=True)
             st.markdown("## 📊 Batch Extraction Results")
 
@@ -1458,7 +1466,7 @@ else:
             chain = st.session_state["chain_data"]
             all_extractions = st.session_state.get("chain_extractions", [])
 
-            st.markdown("---")
+        
             st.markdown('<span class="badge badge-green">Results</span>', unsafe_allow_html=True)
             st.markdown("## 🔗 Chain of Title — Ownership Timeline")
 
