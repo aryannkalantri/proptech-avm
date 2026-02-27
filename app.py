@@ -43,6 +43,7 @@ def _get_secret(key: str, default: str = "") -> str:
 GEMINI_API_KEY = _get_secret("GEMINI_API_KEY")
 DEFAULT_MODEL = _get_secret("GEMINI_MODEL", "gemini-2.5-flash")
 GMAPS_API_KEY = _get_secret("GMAPS_API_KEY")
+MAPBOX_API_KEY = _get_secret("MAPBOX_API_KEY")
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Page configuration
@@ -379,16 +380,19 @@ def sanitize_filename(name: str) -> str:
 # ─────────────────────────────────────────────────────────────────────────────
 # Satellite Discrepancy Engine
 # ─────────────────────────────────────────────────────────────────────────────
+# Prompts
+# ─────────────────────────────────────────────────────────────────────────────
 DISCREPANCY_PROMPT = (
     "You are a PropTech Risk Officer. I am giving you:\n"
     "1. The extracted details of a property deed (JSON below)\n"
-    "2. A current satellite image of the property coordinates\n\n"
+    "2. Up to three current satellite images of the property coordinates from different providers (e.g., Google, Esri, Mapbox).\n\n"
     "DEED DATA:\n{deed_json}\n\n"
-    "Compare them and produce a DISCREPANCY REPORT. Analyze carefully:\n"
+    "Compare the deed data against the satellite images and produce a DISCREPANCY REPORT. Analyze carefully:\n"
     "- Does the deed describe empty/vacant land while the satellite shows a built structure (or vice versa)?\n"
     "- Are there obvious boundary discrepancies or encroachments visible?\n"
     "- Any signs of unauthorized construction, environmental risk, or flood-prone terrain?\n"
-    "- Does the visible plot size roughly match the deed's land area?\n\n"
+    "- Does the visible plot size roughly match the deed's land area?\n"
+    "- Note any differences between the satellite images (e.g. one might show newer construction than another).\n\n"
     "Output EXACTLY in this format:\n"
     "RISK LEVEL: [HIGH / MEDIUM / LOW / NONE]\n"
     "FINDINGS:\n"
@@ -398,34 +402,109 @@ DISCREPANCY_PROMPT = (
     "RECOMMENDATION: [one-line action item for the bank valuer]"
 )
 
+INSIGHTS_PROMPT = (
+    "You are a Real Estate Valuer and Geography Expert. I am giving you up to three satellite images "
+    "of a specific property coordinate from different providers (e.g., Google, Esri, Mapbox). "
+    "There is NO deed data available. Provide a pure visual analysis of the property and its surroundings.\n\n"
+    "Analyze thoroughly:\n"
+    "- Land classification (residential, commercial, agricultural, industrial, barren, etc.)\n"
+    "- Surrounding infrastructure (proximity to major roads, highways, water bodies, or urban density)\n"
+    "- Development density (highly developed area vs. open greenfield)\n"
+    "- Potential risks (flood plains, dense forests, steep terrain, industrial hazards, proximity to coastal/river banks)\n\n"
+    "Output EXACTLY in this format:\n"
+    "PROPERTY TYPE: [Likely classification]\n"
+    "DEVELOPMENT LEVEL: [High / Medium / Low / Undeveloped]\n"
+    "GEOGRAPHIC INSIGHTS:\n"
+    "- [insight 1]\n"
+    "- [insight 2]\n"
+    "- ...\n"
+    "NOTABLE RISKS: [List any visible environmental or locational risks, or 'None visible']"
+)
 
-def download_satellite_image(lat: float, lon: float, api_key: str, zoom: int = 20) -> Image.Image:
-    """Download satellite image from Google Maps Static API."""
-    url = (
-        f"https://maps.googleapis.com/maps/api/staticmap"
-        f"?center={lat},{lon}"
-        f"&zoom={zoom}"
-        f"&size=600x600"
-        f"&maptype=satellite"
-        f"&key={api_key}"
-    )
-    resp = requests.get(url, timeout=15)
+
+import math
+
+def deg2num(lat_deg: float, lon_deg: float, zoom: int) -> tuple:
+    """Calculate the Slippy Map tile X and Y from Lat/Lon."""
+    lat_rad = math.radians(lat_deg)
+    n = 2.0 ** zoom
+    xtile = int((lon_deg + 180.0) / 360.0 * n)
+    ytile = int((1.0 - math.asinh(math.tan(lat_rad)) / math.pi) / 2.0 * n)
+    return (xtile, ytile)
+
+
+def download_google_satellite(lat: float, lon: float, api_key: str, zoom: int = 20) -> Image.Image:
+    url = f"https://maps.googleapis.com/maps/api/staticmap?center={lat},{lon}&zoom={zoom}&size=600x600&maptype=satellite&key={api_key}"
+    resp = requests.get(url, timeout=10)
     resp.raise_for_status()
     return Image.open(io.BytesIO(resp.content))
 
 
-def run_discrepancy_check(api_key: str, satellite_img: Image.Image, deed_data: dict) -> str:
-    """Send satellite image + deed JSON to Gemini for risk analysis."""
+def download_esri_satellite(lat: float, lon: float, zoom: int = 18) -> Image.Image:
+    x, y = deg2num(lat, lon, zoom)
+    url = f"https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{zoom}/{y}/{x}"
+    resp = requests.get(url, timeout=10)
+    resp.raise_for_status()
+    return Image.open(io.BytesIO(resp.content))
+
+
+def download_mapbox_satellite(lat: float, lon: float, api_key: str, zoom: int = 18) -> Image.Image:
+    url = f"https://api.mapbox.com/styles/v1/mapbox/satellite-v9/static/{lon},{lat},{zoom},0/600x600?access_token={api_key}"
+    resp = requests.get(url, timeout=10)
+    resp.raise_for_status()
+    return Image.open(io.BytesIO(resp.content))
+
+
+def get_all_satellite_imagery(lat: float, lon: float) -> dict:
+    """Fetch available satellite images from all configured providers."""
+    images = {}
+    
+    # 1. Esri (Free, no key needed)
+    try:
+        images["Esri World Imagery"] = download_esri_satellite(lat, lon, zoom=19)
+    except Exception as e:
+        images["Esri World Imagery"] = f"Error: {e}"
+
+    # 2. Google Maps
+    if GMAPS_API_KEY:
+        try:
+            images["Google Maps Satellite"] = download_google_satellite(lat, lon, GMAPS_API_KEY, zoom=20)
+        except Exception as e:
+            images["Google Maps Satellite"] = f"Error: {e}"
+            
+    # 3. Mapbox
+    if MAPBOX_API_KEY:
+        try:
+            images["Mapbox Satellite"] = download_mapbox_satellite(lat, lon, MAPBOX_API_KEY, zoom=19)
+        except Exception as e:
+            images["Mapbox Satellite"] = f"Error: {e}"
+            
+    return images
+
+
+def run_multi_source_analysis(api_key: str, images_dict: dict, deed_data: dict = None) -> str:
+    """Send multiple satellite images + (optional) deed JSON to Gemini for risk/insight analysis."""
     client = genai.Client(api_key=api_key)
-    clean_data = {}
-    for key in ["customer_name", "address", "land_area",
-                 "dim_east", "dim_west", "dim_north", "dim_south",
-                 "bound_east", "bound_west", "bound_north", "bound_south"]:
-        clean_data[key] = get_val(deed_data, key)
-    prompt = DISCREPANCY_PROMPT.format(deed_json=json.dumps(clean_data, indent=2))
+    
+    # Filter out failures so we only send valid PIL images
+    valid_images = [img for name, img in images_dict.items() if isinstance(img, Image.Image)]
+    
+    if deed_data:
+        # Discrepancy Check Mode
+        clean_data = {}
+        for key in ["customer_name", "address", "land_area",
+                    "dim_east", "dim_west", "dim_north", "dim_south",
+                    "bound_east", "bound_west", "bound_north", "bound_south"]:
+            clean_data[key] = get_val(deed_data, key)
+        prompt = DISCREPANCY_PROMPT.format(deed_json=json.dumps(clean_data, indent=2))
+        prompt_content = [prompt] + valid_images
+    else:
+        # Standalone Insights Mode
+        prompt_content = [INSIGHTS_PROMPT] + valid_images
+
     response = client.models.generate_content(
         model="gemini-2.5-flash",
-        contents=[prompt, satellite_img],
+        contents=prompt_content,
     )
     return response.text.strip()
 
@@ -652,12 +731,20 @@ with st.sidebar:
         st.error("Maps Engine: Not configured", icon="🛰️")
         st.caption("Admin: add `GMAPS_API_KEY` to `.env` file")
 
+    if MAPBOX_API_KEY:
+        st.success("Mapbox Engine: Connected ✓", icon="🌍")
+    else:
+        st.error("Mapbox Engine: Not configured", icon="🌍")
+        st.caption("Admin: add `MAPBOX_API_KEY` to `.env` file")
+
     st.markdown("---")
     st.markdown(
         """
         **Modes**
 
         📄 **Single Deed** — Upload 1 PDF, extract data
+        
+        🌍 **Property Insights** — Enter coordinates, get AI analysis (No Deed)
 
         🔗 **Chain of Title** — Upload multiple deeds,
         trace ownership from original to current owner
@@ -698,7 +785,7 @@ st.markdown("---")
 # ─────────────────────────────────────────────────────────────────────────────
 mode = st.radio(
     "Choose mode",
-    ["📄 Single Deed", "📦 Batch Processing", "🔗 Chain of Title"],
+    ["📄 Single Deed", "🌍 Property Insights (No Deed)", "📦 Batch Processing", "🔗 Chain of Title"],
     horizontal=True,
     label_visibility="collapsed",
 )
@@ -894,22 +981,28 @@ if mode == "📄 Single Deed":
                     "and asks Gemini to compare it against the deed data."
                 )
 
-                if not GMAPS_API_KEY:
-                    st.warning("Maps Engine not configured (missing key in .env or secrets).", icon="🔑")
-                elif st.button("🔍 Run AI Discrepancy Check", use_container_width=True, key="single_risk_check", type="primary"):
-                    with st.spinner("📡 Downloading satellite image…"):
+                if st.button("🔍 Run AI Discrepancy Check", use_container_width=True, key="single_risk_check", type="primary"):
+                    with st.spinner("📡 Downloading satellite imagery from multiple sources…"):
                         try:
-                            sat_img = download_satellite_image(sat_lat, sat_lon, GMAPS_API_KEY)
-                            st.session_state["sat_img"] = sat_img
-                            st.image(sat_img, caption=f"Satellite @ ({sat_lat:.4f}, {sat_lon:.4f})", use_container_width=True)
+                            images_dict = get_all_satellite_imagery(sat_lat, sat_lon)
+                            st.session_state["sat_images_dict"] = images_dict
                         except Exception as exc:
-                            st.error(f"Failed to download satellite image: {exc}")
-                            sat_img = None
+                            st.error(f"Failed to fetch imagery: {exc}")
+                            images_dict = None
 
-                    if sat_img:
+                    if images_dict:
+                        # Display images in a grid
+                        cols = st.columns(len(images_dict))
+                        for i, (provider, img) in enumerate(images_dict.items()):
+                            with cols[i]:
+                                if isinstance(img, Image.Image):
+                                    st.image(img, caption=provider, use_container_width=True)
+                                else:
+                                    st.error(f"{provider}\n{img}", icon="❌")
+
                         with st.spinner("🤖 Running AI discrepancy analysis…"):
                             try:
-                                report = run_discrepancy_check(GEMINI_API_KEY, sat_img, extracted)
+                                report = run_multi_source_analysis(GEMINI_API_KEY, images_dict, extracted)
                                 st.session_state["risk_report"] = report
                             except Exception as exc:
                                 st.error(f"AI analysis failed: {exc}")
@@ -980,6 +1073,57 @@ if mode == "📄 Single Deed":
                     unsafe_allow_html=True,
                 )
 
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# MODE 4: PROPERTY INSIGHTS (NO DEED)
+# ═══════════════════════════════════════════════════════════════════════════════
+elif mode == "🌍 Property Insights (No Deed)":
+
+    st.markdown('<div class="avm-card">', unsafe_allow_html=True)
+    st.markdown('<span class="badge badge-amber">Earth Engine</span>', unsafe_allow_html=True)
+    st.markdown("### 🌍 AI Property Insights")
+    st.markdown(
+        "Enter coordinates to analyze the property and surrounding geographic features. "
+        "Gemini will assess land type, development density, infrastructure, and potential risks "
+        "using up to 3 different high-res satellite providers simultaneously."
+    )
+
+    col1, col2 = st.columns(2)
+    with col1:
+        sat_lat = st.number_input("Latitude", value=26.912400, format="%.6f", key="insights_lat")
+    with col2:
+        sat_lon = st.number_input("Longitude", value=75.787300, format="%.6f", key="insights_lon")
+
+    if st.button("🔮 Generate Geographic Insights", use_container_width=True, type="primary"):
+        with st.spinner("📡 Fetching multi-source satellite imagery…"):
+            try:
+                images_dict = get_all_satellite_imagery(sat_lat, sat_lon)
+                st.session_state["insights_images"] = images_dict
+            except Exception as exc:
+                st.error(f"Failed to fetch imagery: {exc}")
+                images_dict = None
+
+        if images_dict:
+            # Display all fetched images
+            st.markdown("#### Satellite Feeds")
+            cols = st.columns(len(images_dict))
+            for i, (provider, img) in enumerate(images_dict.items()):
+                with cols[i]:
+                    if isinstance(img, Image.Image):
+                        st.image(img, caption=provider, use_container_width=True)
+                    else:
+                        st.error(f"{provider}\n{img}", icon="❌")
+
+            with st.spinner("🤖 Generative AI analyzing geography & surroundings…"):
+                try:
+                    report = run_multi_source_analysis(GEMINI_API_KEY, images_dict, deed_data=None)
+                    st.success("Analysis Complete!")
+                    st.markdown("### 📋 AI Insights Report")
+                    st.markdown(f"> {report.replace(chr(10), chr(10) + '> ')}")
+                except Exception as exc:
+                    st.error(f"AI analysis failed: {exc}")
+
+    st.markdown('</div>', unsafe_allow_html=True)
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # MODE 2: BATCH PROCESSING
