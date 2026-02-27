@@ -49,7 +49,7 @@ MAPBOX_API_KEY = _get_secret("MAPBOX_API_KEY")
 # Page configuration
 # ─────────────────────────────────────────────────────────────────────────────
 st.set_page_config(
-    page_title="PropTech AVM: Vision Extractor",
+    page_title="docfinder: Vision Extractor",
     page_icon="🏗️",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -750,9 +750,8 @@ def render_chain_timeline(chain: list):
 # Sidebar
 # ─────────────────────────────────────────────────────────────────────────────
 with st.sidebar:
-    st.markdown("## 🏗️ PropTech AVM")
-    st.markdown("**Vision Extractor** — Production")
-    st.markdown("---")
+    st.markdown("## 🏗️ docfinder")
+    st.markdown("**Powered by Gemini 2.5 Flash**")
 
     # API status indicator (no input needed from user)
     if GEMINI_API_KEY:
@@ -806,7 +805,7 @@ with st.sidebar:
 # Main header
 # ─────────────────────────────────────────────────────────────────────────────
 st.markdown(
-    "<h1 style='text-align:center;'>🏗️ PropTech AVM: Vision Extractor</h1>",
+    "<h1 style='text-align:center;'>🏗️ docfinder</h1>",
     unsafe_allow_html=True,
 )
 st.markdown(
@@ -815,19 +814,12 @@ st.markdown(
     "</p>",
     unsafe_allow_html=True,
 )
-st.markdown("---")
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Mode selector
-# ─────────────────────────────────────────────────────────────────────────────
 mode = st.radio(
     "Choose mode",
     ["📄 Single Deed", "🌍 Property Insights (No Deed)", "📦 Batch Processing", "🔗 Chain of Title"],
     horizontal=True,
     label_visibility="collapsed",
 )
-
-
 # ═══════════════════════════════════════════════════════════════════════════════
 # MODE 1: SINGLE DEED (original behavior)
 # ═══════════════════════════════════════════════════════════════════════════════
