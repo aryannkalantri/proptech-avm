@@ -433,6 +433,43 @@ def deg2num(lat_deg: float, lon_deg: float, zoom: int) -> tuple:
     return (xtile, ytile)
 
 
+from PIL.ExifTags import TAGS, GPSTAGS
+
+def get_decimal_from_dms(dms, ref):
+    """Convert EXIF GPS DMS (Degrees, Minutes, Seconds) to Decimal Degrees."""
+    degrees = float(dms[0])
+    minutes = float(dms[1])
+    seconds = float(dms[2])
+    
+    decimal = degrees + (minutes / 60.0) + (seconds / 3600.0)
+    if ref in ['S', 'W']:
+        decimal = -decimal
+    return decimal
+
+def get_exif_gps_coords(image: Image.Image) -> tuple:
+    """Extract Latitude and Longitude from PIL Image EXIF data."""
+    exif_data = image._getexif()
+    if not exif_data:
+        return None
+    
+    gps_info = None
+    for tag_id, value in exif_data.items():
+        tag_name = TAGS.get(tag_id, tag_id)
+        if tag_name == "GPSInfo":
+            gps_info = {GPSTAGS.get(t, t): gps_data for t, gps_data in value.items()}
+            break
+            
+    if not gps_info:
+        return None
+        
+    try:
+        lat = get_decimal_from_dms(gps_info['GPSLatitude'], gps_info['GPSLatitudeRef'])
+        lon = get_decimal_from_dms(gps_info['GPSLongitude'], gps_info['GPSLongitudeRef'])
+        return lat, lon
+    except KeyError:
+        return None
+
+
 def download_google_satellite(lat: float, lon: float, api_key: str, zoom: int = 20) -> Image.Image:
     url = f"https://maps.googleapis.com/maps/api/staticmap?center={lat},{lon}&zoom={zoom}&size=600x600&maptype=satellite&key={api_key}"
     resp = requests.get(url, timeout=10)
@@ -1083,16 +1120,47 @@ elif mode == "🌍 Property Insights (No Deed)":
     st.markdown('<span class="badge badge-amber">Earth Engine</span>', unsafe_allow_html=True)
     st.markdown("### 🌍 AI Property Insights")
     st.markdown(
-        "Enter coordinates to analyze the property and surrounding geographic features. "
+        "Upload a ground-level property photo or enter coordinates to analyze the location. "
         "Gemini will assess land type, development density, infrastructure, and potential risks "
         "using up to 3 different high-res satellite providers simultaneously."
     )
 
+    # Image Upload for EXIF extraction
+    ground_img_file = st.file_uploader(
+        "📸 Upload a Property Photo (Optional, extracts GPS)",
+        type=["jpg", "jpeg", "png"],
+        key="insights_upload"
+    )
+
+    ground_image = None
+    if ground_img_file:
+        try:
+            ground_image = Image.open(ground_img_file)
+            st.image(ground_image, caption="Uploaded Property Photo", use_container_width=True)
+            
+            # Try to extract GPS from EXIF
+            coords = get_exif_gps_coords(ground_image)
+            if coords:
+                lat, lon = coords
+                st.success(f"📍 Found GPS coordinates in image: {lat:.6f}, {lon:.6f}", icon="✅")
+                # Auto-fill the numeric inputs via session state
+                st.session_state["auto_lat"] = lat
+                st.session_state["auto_lon"] = lon
+            else:
+                st.info("No GPS data found in the image. Please enter coordinates manually below.")
+                
+        except Exception as e:
+            st.error(f"Error reading image: {e}")
+
+    # Set default values or use auto-extracted values
+    default_lat = st.session_state.get("auto_lat", 26.912400)
+    default_lon = st.session_state.get("auto_lon", 75.787300)
+
     col1, col2 = st.columns(2)
     with col1:
-        sat_lat = st.number_input("Latitude", value=26.912400, format="%.6f", key="insights_lat")
+        sat_lat = st.number_input("Latitude", value=default_lat, format="%.6f", key="insights_lat")
     with col2:
-        sat_lon = st.number_input("Longitude", value=75.787300, format="%.6f", key="insights_lon")
+        sat_lon = st.number_input("Longitude", value=default_lon, format="%.6f", key="insights_lon")
 
     if st.button("🔮 Generate Geographic Insights", use_container_width=True, type="primary"):
         with st.spinner("📡 Fetching multi-source satellite imagery…"):
@@ -1104,7 +1172,7 @@ elif mode == "🌍 Property Insights (No Deed)":
                 images_dict = None
 
         if images_dict:
-            # Display all fetched images
+            # Display all fetched satellite images
             st.markdown("#### Satellite Feeds")
             cols = st.columns(len(images_dict))
             for i, (provider, img) in enumerate(images_dict.items()):
@@ -1116,6 +1184,10 @@ elif mode == "🌍 Property Insights (No Deed)":
 
             with st.spinner("🤖 Generative AI analyzing geography & surroundings…"):
                 try:
+                    # If we have a ground image, add it to the image dict passed to Gemini
+                    if ground_image:
+                        images_dict["Ground-Level Property Photo"] = ground_image
+                        
                     report = run_multi_source_analysis(GEMINI_API_KEY, images_dict, deed_data=None)
                     st.success("Analysis Complete!")
                     st.markdown("### 📋 AI Insights Report")
