@@ -50,7 +50,7 @@ MAPBOX_API_KEY = _get_secret("MAPBOX_API_KEY")
 # ─────────────────────────────────────────────────────────────────────────────
 st.set_page_config(
     page_title="docfinder: Vision Extractor",
-    page_icon="🏗️",
+    page_icon="📄",
     layout="wide",
     initial_sidebar_state="expanded",
 )
@@ -61,154 +61,168 @@ st.set_page_config(
 st.markdown(
     """
     <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+    /* ── LIGHT MODE & RESPONSIVENESS ── */
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
 
-    html, body, [class*="css"] { font-family: 'Inter', sans-serif; }
-
-    /* Deep navy gradient background */
-    .stApp {
-        background: linear-gradient(145deg, #080e1a 0%, #0f1f38 55%, #071625 100%);
-        color: #cfd8e8;
+    html, body, [class*="css"] {
+        font-family: 'Inter', sans-serif;
     }
 
-    /* Sidebar */
+    /* Reduce Streamlit's huge default horizontal spacing on desktop, and tighten on mobile */
+    .block-container {
+        max-width: 1200px !important;
+        padding-top: 2rem !important;
+        padding-bottom: 2rem !important;
+        padding-left: clamp(1rem, 5vw, 3rem) !important;
+        padding-right: clamp(1rem, 5vw, 3rem) !important;
+    }
+
+    /* Main Background - Light Mode */
+    .stApp {
+        background: #f8f9fc;
+        color: #1a202c;
+    }
+
+    /* Sidebar - Light Mode */
     [data-testid="stSidebar"] {
-        background: linear-gradient(180deg, #080e1a 0%, #0c1a30 100%);
-        border-right: 1px solid rgba(50, 120, 220, 0.2);
+        background: #ffffff;
+        border-right: 1px solid #e2e8f0;
     }
     [data-testid="stSidebar"] h1,
     [data-testid="stSidebar"] h2,
-    [data-testid="stSidebar"] h3 { color: #7eb8f7 !important; }
-
-    /* Glassmorphism cards */
-    .avm-card {
-        background: rgba(255,255,255,0.04);
-        border: 1px solid rgba(80,150,240,0.2);
-        border-radius: 16px;
-        padding: 1.8rem 2.2rem;
-        margin-bottom: 1.6rem;
-        backdrop-filter: blur(10px);
+    [data-testid="stSidebar"] h3,
+    [data-testid="stSidebar"] span,
+    [data-testid="stSidebar"] p {
+        color: #2d3748 !important;
     }
 
-    /* Status badge */
+    /* Glassmorphism cards - Light Mode */
+    .avm-card {
+        background: #ffffff;
+        border: 1px solid #e2e8f0;
+        border-radius: 16px;
+        padding: clamp(1.2rem, 3vw, 2rem);
+        margin-bottom: 1.6rem;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
+    }
+
+    /* Status badge - Light Mode */
     .badge {
         display: inline-block;
         padding: 0.25rem 0.85rem;
         border-radius: 20px;
         font-size: 0.72rem;
         font-weight: 700;
-        letter-spacing: 0.09em;
+        letter-spacing: 0.05em;
         text-transform: uppercase;
         margin-bottom: 0.6rem;
     }
-    .badge-blue  { background: rgba(30,100,220,0.25); color: #7eb8f7; border: 1px solid rgba(100,160,255,0.35); }
-    .badge-green { background: rgba(20,160,80,0.2);  color: #6ddba3; border: 1px solid rgba(60,200,100,0.35); }
-    .badge-amber { background: rgba(200,120,0,0.2);  color: #ffc96b; border: 1px solid rgba(240,160,20,0.35); }
+    .badge-blue  { background: #ebf4ff; color: #3182ce; border: 1px solid #bee3f8; }
+    .badge-green { background: #f0fff4; color: #38a169; border: 1px solid #c6f6d5; }
+    .badge-amber { background: #fffaf0; color: #dd6b20; border: 1px solid #feebc8; }
 
     /* Buttons */
     .stButton > button {
-        background: linear-gradient(135deg, #1a5dbf, #0b3d82);
+        background: #3182ce;
         color: white; border: none; border-radius: 10px;
         padding: 0.55rem 1.5rem; font-weight: 600;
-        transition: opacity 0.18s, transform 0.12s;
+        transition: opacity 0.18s, transform 0.12s, box-shadow 0.2s;
+        box-shadow: 0 2px 4px rgba(49, 130, 206, 0.3);
     }
-    .stButton > button:hover { opacity: 0.85; transform: translateY(-1px); }
+    .stButton > button:hover { 
+        opacity: 0.9; transform: translateY(-1px);
+        box-shadow: 0 4px 6px rgba(49, 130, 206, 0.4);
+        color: white;
+    }
 
-    /* Headings */
-    h1 { color: #7eb8f7 !important; font-weight: 700 !important; }
-    h2 { color: #aecff7 !important; font-weight: 600 !important; }
-    h3 { color: #cde0fb !important; }
+    /* Headings - Light Mode & responsive */
+    h1 { color: #1a202c !important; font-weight: 700 !important; font-size: clamp(2rem, 5vw, 2.5rem) !important; }
+    h2 { color: #2d3748 !important; font-weight: 600 !important; font-size: clamp(1.5rem, 4vw, 2rem) !important; }
+    h3 { color: #4a5568 !important; font-size: clamp(1.2rem, 3vw, 1.5rem) !important;}
+    p, span, div { color: #4a5568; }
 
     /* JSON viewer */
     [data-testid="stJson"] {
-        background: rgba(0,0,0,0.35) !important;
-        border: 1px solid rgba(80,140,220,0.25) !important;
+        background: #f7fafc !important;
+        border: 1px solid #e2e8f0 !important;
         border-radius: 10px !important;
         font-size: 0.88rem !important;
     }
 
     /* Table */
     [data-testid="stTable"] table {
-        background: rgba(255,255,255,0.03);
+        background: #ffffff;
         border-radius: 10px;
-        border: 1px solid rgba(80,140,220,0.2);
+        border: 1px solid #e2e8f0;
+        border-collapse: collapse;
+        width: 100%;
     }
     [data-testid="stTable"] th {
-        background: rgba(30,80,180,0.2) !important;
-        color: #7eb8f7 !important;
+        background: #f7fafc !important;
+        color: #4a5568 !important;
         font-weight: 600 !important;
+        border-bottom: 2px solid #e2e8f0;
     }
-    [data-testid="stTable"] td { color: #cfd8e8 !important; }
+    [data-testid="stTable"] td { 
+        color: #2d3748 !important; 
+        border-bottom: 1px solid #edf2f7;
+    }
 
     /* Alerts */
-    .stSuccess { background: rgba(20,160,80,0.15) !important; border-radius: 8px; }
-    .stWarning { background: rgba(200,120,0,0.15) !important; border-radius: 8px; }
-    .stError   { background: rgba(180,30,30,0.15) !important; border-radius: 8px; }
-    .stInfo    { background: rgba(30,80,180,0.15) !important; border-radius: 8px; }
+    .stSuccess { background: #f0fff4 !important; border: 1px solid #c6f6d5 !important; border-radius: 8px; color: #276749 !important; }
+    .stWarning { background: #fffaf0 !important; border: 1px solid #feebc8 !important; border-radius: 8px; color: #c05621 !important; }
+    .stError   { background: #fff5f5 !important; border: 1px solid #fed7d7 !important; border-radius: 8px; color: #c53030 !important; }
+    .stInfo    { background: #ebf4ff !important; border: 1px solid #bee3f8 !important; border-radius: 8px; color: #2b6cb0 !important; }
 
     /* File uploader */
     [data-testid="stFileUploader"] {
-        border: 2px dashed rgba(80,150,240,0.4);
-        border-radius: 14px;
-        background: rgba(255,255,255,0.02);
-        transition: border-color 0.2s;
+        border: 2px dashed #cbd5e0 !important;
+        border-radius: 14px !important;
+        background: #f8f9fc !important;
+        transition: border-color 0.2s, background-color 0.2s;
     }
-    [data-testid="stFileUploader"]:hover { border-color: rgba(100,180,255,0.75); }
+    [data-testid="stFileUploader"]:hover { 
+        border-color: #3182ce !important; 
+        background: #ebf4ff !important;
+    }
 
     /* Divider */
-    hr { border-color: rgba(80,140,220,0.15) !important; }
+    hr { border-color: #e2e8f0 !important; margin: 2em 0; }
 
     /* Image caption */
-    .stImage figcaption { color: #7eb8f7 !important; font-size: 0.8rem; }
+    .stImage figcaption { color: #718096 !important; font-size: 0.8rem; }
 
     /* ── Chain of Title Timeline ── */
-    .chain-timeline { position: relative; padding-left: 2.5rem; margin: 1.5rem 0; }
+    .chain-timeline { position: relative; padding-left: clamp(1.5rem, 4vw, 2.5rem); margin: 1.5rem 0; }
     .chain-timeline::before {
         content: ''; position: absolute; left: 0.9rem; top: 0; bottom: 0;
-        width: 3px; background: linear-gradient(180deg, #1a5dbf, #7eb8f7);
+        width: 3px; background: linear-gradient(180deg, #3182ce, #63b3ed);
         border-radius: 2px;
     }
     .chain-node {
-        position: relative; margin-bottom: 1.5rem; padding: 1rem 1.2rem;
-        background: rgba(15,31,56,0.7); border: 1px solid rgba(80,140,220,0.2);
+        position: relative; margin-bottom: 1.5rem; padding: clamp(0.8rem, 2vw, 1.2rem);
+        background: #ffffff; border: 1px solid #e2e8f0;
         border-radius: 10px;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.05);
     }
     .chain-node.current {
-        border-color: #4caf50; background: rgba(76,175,80,0.08);
-        box-shadow: 0 0 12px rgba(76,175,80,0.15);
+        border-color: #48bb78; background: #f0fff4;
+        box-shadow: 0 0 12px rgba(72,187,120,0.15);
     }
     .chain-node.gap-warning {
-        border-color: #ff9800; background: rgba(255,152,0,0.08);
+        border-color: #ed8936; background: #fffaf0;
     }
-    .chain-node::before {
-        content: ''; position: absolute; left: -1.95rem; top: 1.2rem;
-        width: 14px; height: 14px; border-radius: 50%;
-        background: #1a5dbf; border: 2px solid #0a1929;
-    }
-    .chain-node.current::before { background: #4caf50; }
-    .chain-node .node-date {
-        font-size: 0.78rem; color: #7eb8f7; font-weight: 600;
-        text-transform: uppercase; letter-spacing: 0.5px;
-    }
-    .chain-node .node-title {
-        font-size: 1rem; color: #cfd8e8; font-weight: 600; margin: 0.3rem 0;
-    }
-    .chain-node .node-detail {
-        font-size: 0.85rem; color: #7a90a8; line-height: 1.5;
-    }
-    .chain-node .node-badge {
+    .chain-node .chain-date {
         display: inline-block; padding: 0.15rem 0.5rem; border-radius: 4px;
-        font-size: 0.7rem; font-weight: 700; text-transform: uppercase;
-        letter-spacing: 0.5px; margin-left: 0.5rem;
+        background: #edf2f7; color: #4a5568; font-size: 0.75rem; font-weight: 600;
+        margin-bottom: 0.4rem;
     }
-    .chain-node .badge-current { background: rgba(76,175,80,0.2); color: #66bb6a; }
-    .chain-node .badge-gap { background: rgba(255,152,0,0.2); color: #ffa726; }
-    .chain-status {
-        padding: 1rem; border-radius: 10px; text-align: center;
-        font-weight: 600; margin-top: 1rem;
+    .chain-node .chain-party { color: #2d3748; font-size: 0.9rem; line-height: 1.4; }
+    .gap-alert {
+        padding: clamp(0.6rem, 2vw, 1rem); border-radius: 10px; text-align: center;
+        background: #fff5f5; border: 1px dashed #fc8181;
+        color: #c53030; font-size: 0.8rem; margin-bottom: 1.5rem;
     }
-    .chain-complete { background: rgba(76,175,80,0.1); color: #66bb6a; border: 1px solid rgba(76,175,80,0.3); }
-    .chain-broken { background: rgba(255,152,0,0.1); color: #ffa726; border: 1px solid rgba(255,152,0,0.3); }
     </style>
     """,
     unsafe_allow_html=True,
@@ -750,7 +764,7 @@ def render_chain_timeline(chain: list):
 # Sidebar
 # ─────────────────────────────────────────────────────────────────────────────
 with st.sidebar:
-    st.markdown("## 🏗️ docfinder")
+    st.markdown("## 📄 docfinder")
     st.markdown("**Powered by Gemini 2.5 Flash**")
 
     # API status indicator (no input needed from user)
@@ -805,7 +819,7 @@ with st.sidebar:
 # Main header
 # ─────────────────────────────────────────────────────────────────────────────
 st.markdown(
-    "<h1 style='text-align:center;'>🏗️ docfinder</h1>",
+    "<h1 style='text-align:center;'>docfinder</h1>",
     unsafe_allow_html=True,
 )
 st.markdown(
@@ -1069,8 +1083,7 @@ if mode == "📄 Single Deed":
         st.markdown(
             """
             <div style="text-align:center; padding: 3rem 1rem;">
-                <div style="font-size:4rem; margin-bottom:1rem;">🏗️</div>
-                <h2 style="color:#7eb8f7; margin-bottom:0.5rem;">Ready to Extract</h2>
+                <h2 style="color:#2d3748; margin-bottom:0.5rem;">Ready to Extract</h2>
                 <p style="color:#607d8b; max-width:480px; margin:0 auto;">
                     Upload a scanned Indian property document PDF above.
                     The AI will read every page and extract Buyer, Seller,
