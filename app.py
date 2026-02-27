@@ -1079,7 +1079,7 @@ if mode == "📄 Single Deed":
 
     else:
         # Idle hero state
-        st.markdown('<div class="avm-card">', unsafe_allow_html=True)
+
         st.markdown(
             """
             <div style="text-align:center; padding: 3rem 1rem;">
@@ -1094,7 +1094,7 @@ if mode == "📄 Single Deed":
             """,
             unsafe_allow_html=True,
         )
-        st.markdown("</div>", unsafe_allow_html=True)
+
 
         feat1, feat2, feat3, feat4 = st.columns(4)
         for col, icon, title, desc in [
@@ -1137,43 +1137,37 @@ elif mode == "🌍 Property Insights (No Deed)":
         key="insights_upload"
     )
 
-    # Allow camera input for mobile users
-    camera_img_file = st.camera_input(
-        "📷 Or take a picture directly", 
-        key="insights_camera"
-    )
-
     ground_image = None
-    active_img_file = camera_img_file or ground_img_file
-
-    if active_img_file:
+    if ground_img_file:
         try:
-            ground_image = Image.open(active_img_file)
+            ground_image = Image.open(ground_img_file)
             st.image(ground_image, caption="Uploaded Property Photo", use_container_width=True)
             
             # Try to extract GPS from EXIF
             coords = get_exif_gps_coords(ground_image)
             if coords:
                 lat, lon = coords
+                
+                # Auto-fill only once per file upload to allow user overrides later
+                file_hash = f"{ground_img_file.name}_{ground_img_file.size}"
+                if st.session_state.get("last_uploaded_file_hash") != file_hash:
+                    st.session_state["last_uploaded_file_hash"] = file_hash
+                    st.session_state["insights_lat"] = float(lat)
+                    st.session_state["insights_lon"] = float(lon)
+                    st.rerun()
+
                 st.success(f"📍 Found GPS coordinates in image: {lat:.6f}, {lon:.6f}", icon="✅")
-                # Auto-fill the numeric inputs via session state
-                st.session_state["auto_lat"] = lat
-                st.session_state["auto_lon"] = lon
             else:
                 st.info("No GPS data found in the image. Please enter coordinates manually below.")
                 
         except Exception as e:
             st.error(f"Error reading image: {e}")
 
-    # Set default values or use auto-extracted values
-    default_lat = st.session_state.get("auto_lat", 26.912400)
-    default_lon = st.session_state.get("auto_lon", 75.787300)
-
     col1, col2 = st.columns(2)
     with col1:
-        sat_lat = st.number_input("Latitude", value=default_lat, format="%.6f", key="insights_lat")
+        sat_lat = st.number_input("Latitude", value=26.912400, format="%.6f", key="insights_lat")
     with col2:
-        sat_lon = st.number_input("Longitude", value=default_lon, format="%.6f", key="insights_lon")
+        sat_lon = st.number_input("Longitude", value=75.787300, format="%.6f", key="insights_lon")
 
     if st.button("🔮 Generate Geographic Insights", use_container_width=True, type="primary"):
         with st.spinner("📡 Fetching multi-source satellite imagery…"):
@@ -1234,7 +1228,7 @@ elif mode == "📦 Batch Processing":
 
     if batch_pdfs and len(batch_pdfs) > 0:
 
-        st.markdown('<div class="avm-card">', unsafe_allow_html=True)
+
         st.markdown('<span class="badge badge-amber">Step 2</span>', unsafe_allow_html=True)
         st.markdown(f"### 🤖 Batch Extraction — {len(batch_pdfs)} Document{'s' if len(batch_pdfs) > 1 else ''}")
 
@@ -1309,7 +1303,7 @@ elif mode == "📦 Batch Processing":
                 customer = get_val(result, "customer_name")
                 cust_conf = get_conf(result, "customer_name")
                 with st.expander(f"{conf_badge(cust_conf).split()[0]} {source} — {customer}", expanded=(i == 0)):
-                    st.markdown('<div class="avm-card">', unsafe_allow_html=True)
+            
                     st.markdown("#### 👤 Customer & Property Summary")
                     st.table(pd.DataFrame([
                         {"Field": "Customer Name", "English": get_val(result, "customer_name"), "Hindi": get_hindi(result, "customer_name"), "Conf.": conf_badge(get_conf(result, "customer_name"))},
@@ -1318,7 +1312,7 @@ elif mode == "📦 Batch Processing":
                     ]))
                     st.markdown('</div>', unsafe_allow_html=True)
 
-                    st.markdown('<div class="avm-card">', unsafe_allow_html=True)
+            
                     st.markdown("#### 🧭 Boundaries & Dimensions")
                     st.table(pd.DataFrame([
                         {"Dir.": "East", "Dim. (EN)": get_val(result, "dim_east"), "Dim. (HI)": get_hindi(result, "dim_east"), "Boundary (EN)": get_val(result, "bound_east"), "Boundary (HI)": get_hindi(result, "bound_east"), "Conf.": conf_badge(get_conf(result, "dim_east"))},
@@ -1358,7 +1352,7 @@ elif mode == "📦 Batch Processing":
 
     else:
         # Idle hero state for Batch mode
-        st.markdown('<div class="avm-card">', unsafe_allow_html=True)
+
         st.markdown(
             """
             <div style="text-align:center; padding: 3rem 1rem;">
@@ -1419,7 +1413,7 @@ else:
 
     if uploaded_pdfs and len(uploaded_pdfs) > 0:
 
-        st.markdown('<div class="avm-card">', unsafe_allow_html=True)
+
         st.markdown('<span class="badge badge-amber">Step 2</span>', unsafe_allow_html=True)
         st.markdown(f"### 🤖 AI Extraction — {len(uploaded_pdfs)} Document{'s' if len(uploaded_pdfs) > 1 else ''}")
 
