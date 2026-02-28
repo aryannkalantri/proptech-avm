@@ -132,6 +132,32 @@ def extract_data_via_gemini(images: list) -> dict:
             st.code(response.text)
         return {}
 
+from copy import copy
+
+def inject_value_preserve_style(ws, coord, value):
+    """Injects a value into a cell while strictly maintaining its original Excel formatting."""
+    target_cell = ws[coord]
+    
+    # Cache the original styles before overwriting
+    original_font = copy(target_cell.font) if target_cell.font else None
+    original_border = copy(target_cell.border) if target_cell.border else None
+    original_fill = copy(target_cell.fill) if target_cell.fill else None
+    original_number_format = copy(target_cell.number_format) if target_cell.number_format else None
+    original_protection = copy(target_cell.protection) if target_cell.protection else None
+    original_alignment = copy(target_cell.alignment) if target_cell.alignment else None
+
+    # Inject Value
+    target_cell.value = value
+    
+    # Re-apply styles
+    if original_font: target_cell.font = original_font
+    if original_border: target_cell.border = original_border
+    if original_fill: target_cell.fill = original_fill
+    if original_number_format: target_cell.number_format = original_number_format
+    if original_protection: target_cell.protection = original_protection
+    if original_alignment: target_cell.alignment = original_alignment
+
+
 def inject_into_excel(data: dict) -> io.BytesIO:
     """Loads the target template, maps the extracted JSON to specific cells, and returns a BytesIO buffer."""
     template_path = "templates/axis_template.xlsx"
@@ -140,45 +166,45 @@ def inject_into_excel(data: dict) -> io.BytesIO:
     wb = openpyxl.load_workbook(template_path, data_only=False)
     ws = wb.active
     
-    # --- CELL MAPPING ---
-    ws['D10'] = data.get('report_date', 'N/A')
-    ws['D11'] = data.get('owner_name', 'N/A')
-    ws['D22'] = data.get('sale_deed_no', 'N/A')
-    ws['D23'] = data.get('plot_no', 'N/A')
-    ws['J23'] = data.get('road_width', 'N/A')
-    ws['D24'] = data.get('colony', 'N/A')
-    ws['J24'] = data.get('landmark', 'N/A')
-    ws['D25'] = data.get('city', 'N/A')
-    ws['J26'] = data.get('pincode', 'N/A')
-    ws['E28'] = data.get('lat', 'N/A')
-    ws['K28'] = data.get('lon', 'N/A')
+    # --- CELL MAPPING (With Style Preservation) ---
+    inject_value_preserve_style(ws, 'D10', data.get('report_date', 'N/A'))
+    inject_value_preserve_style(ws, 'D11', data.get('owner_name', 'N/A'))
+    inject_value_preserve_style(ws, 'D22', data.get('sale_deed_no', 'N/A'))
+    inject_value_preserve_style(ws, 'D23', data.get('plot_no', 'N/A'))
+    inject_value_preserve_style(ws, 'J23', data.get('road_width', 'N/A'))
+    inject_value_preserve_style(ws, 'D24', data.get('colony', 'N/A'))
+    inject_value_preserve_style(ws, 'J24', data.get('landmark', 'N/A'))
+    inject_value_preserve_style(ws, 'D25', data.get('city', 'N/A'))
+    inject_value_preserve_style(ws, 'J26', data.get('pincode', 'N/A'))
+    inject_value_preserve_style(ws, 'E28', data.get('lat', 'N/A'))
+    inject_value_preserve_style(ws, 'K28', data.get('lon', 'N/A'))
     
-    ws['G31'] = data.get('property_type', 'N/A')
-    ws['G32'] = data.get('land_level', 'N/A')
-    ws['G33'] = data.get('construction_observed', 'N/A')
-    ws['G37'] = data.get('civic_amenities', 'N/A')
-    ws['G41'] = data.get('transport_availability', 'N/A')
+    inject_value_preserve_style(ws, 'G31', data.get('property_type', 'N/A'))
+    inject_value_preserve_style(ws, 'G32', data.get('land_level', 'N/A'))
+    inject_value_preserve_style(ws, 'G33', data.get('construction_observed', 'N/A'))
+    inject_value_preserve_style(ws, 'G37', data.get('civic_amenities', 'N/A'))
+    inject_value_preserve_style(ws, 'G41', data.get('transport_availability', 'N/A'))
     
-    ws['E54'] = data.get('plot_area_doc', 'N/A')
-    ws['K54'] = data.get('plot_area_actual', 'N/A')
+    inject_value_preserve_style(ws, 'E54', data.get('plot_area_doc', 'N/A'))
+    inject_value_preserve_style(ws, 'K54', data.get('plot_area_actual', 'N/A'))
     
-    ws['H52'] = data.get('east_boundary', 'N/A')
-    ws['H53'] = data.get('west_boundary', 'N/A')
-    ws['H50'] = data.get('north_boundary', 'N/A')
-    ws['H51'] = data.get('south_boundary', 'N/A')
+    inject_value_preserve_style(ws, 'H52', data.get('east_boundary', 'N/A'))
+    inject_value_preserve_style(ws, 'H53', data.get('west_boundary', 'N/A'))
+    inject_value_preserve_style(ws, 'H50', data.get('north_boundary', 'N/A'))
+    inject_value_preserve_style(ws, 'H51', data.get('south_boundary', 'N/A'))
     
-    ws['G61'] = data.get('structure_type', 'N/A')
-    ws['G62'] = data.get('no_of_floors', 'N/A')
-    ws['G63'] = data.get('occupancy', 'N/A')
-    ws['E100'] = data.get('current_life_years', 'N/A')
-    ws['K100'] = data.get('projected_life_years', 'N/A')
+    inject_value_preserve_style(ws, 'G61', data.get('structure_type', 'N/A'))
+    inject_value_preserve_style(ws, 'G62', data.get('no_of_floors', 'N/A'))
+    inject_value_preserve_style(ws, 'G63', data.get('occupancy', 'N/A'))
+    inject_value_preserve_style(ws, 'E100', data.get('current_life_years', 'N/A'))
+    inject_value_preserve_style(ws, 'K100', data.get('projected_life_years', 'N/A'))
     
-    ws['G107'] = data.get('land_rate', 'N/A')
-    ws['J107'] = data.get('land_value', 'N/A')
-    ws['G108'] = data.get('building_rate', 'N/A')
-    ws['J108'] = data.get('building_value', 'N/A')
-    ws['J121'] = data.get('total_market_value', 'N/A')
-    ws['J122'] = data.get('distress_value', 'N/A')
+    inject_value_preserve_style(ws, 'G107', data.get('land_rate', 'N/A'))
+    inject_value_preserve_style(ws, 'J107', data.get('land_value', 'N/A'))
+    inject_value_preserve_style(ws, 'G108', data.get('building_rate', 'N/A'))
+    inject_value_preserve_style(ws, 'J108', data.get('building_value', 'N/A'))
+    inject_value_preserve_style(ws, 'J121', data.get('total_market_value', 'N/A'))
+    inject_value_preserve_style(ws, 'J122', data.get('distress_value', 'N/A'))
     
     # Save the modified workbook to a binary memory stream
     output_stream = io.BytesIO()
