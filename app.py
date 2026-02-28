@@ -882,45 +882,7 @@ if mode == "📄 Single Deed":
             st.markdown('<span class="badge badge-green">Results</span>', unsafe_allow_html=True)
             st.markdown("## 📊 Extracted Property Data")
 
-            tab_table, tab_json, tab_raw = st.tabs(
-                ["📋 Formatted Results", "🗂️ Raw JSON", "📝 Model Response"]
-            )
 
-            with tab_table:
-                st.markdown('<div class="avm-card">', unsafe_allow_html=True)
-                st.markdown("#### 👤 Customer & Property Summary")
-                import pandas as pd
-                st.table(pd.DataFrame([
-                    {"Field": "Customer Name", "English": get_val(extracted, "customer_name"), "Hindi": get_hindi(extracted, "customer_name"), "Conf.": conf_badge(get_conf(extracted, "customer_name"))},
-                    {"Field": "Full Address", "English": get_val(extracted, "address"), "Hindi": get_hindi(extracted, "address"), "Conf.": conf_badge(get_conf(extracted, "address"))},
-                    {"Field": "Land Area", "English": get_val(extracted, "land_area"), "Hindi": get_hindi(extracted, "land_area"), "Conf.": conf_badge(get_conf(extracted, "land_area"))},
-                ]))
-                st.markdown('</div>', unsafe_allow_html=True)
-
-                st.markdown('<div class="avm-card">', unsafe_allow_html=True)
-                st.markdown("#### 🧭 Boundaries & Dimensions")
-                st.table(pd.DataFrame([
-                    {"Dir.": "East", "Dim. (EN)": get_val(extracted, "dim_east"), "Dim. (HI)": get_hindi(extracted, "dim_east"), "Boundary (EN)": get_val(extracted, "bound_east"), "Boundary (HI)": get_hindi(extracted, "bound_east"), "Conf.": conf_badge(get_conf(extracted, "dim_east"))},
-                    {"Dir.": "West", "Dim. (EN)": get_val(extracted, "dim_west"), "Dim. (HI)": get_hindi(extracted, "dim_west"), "Boundary (EN)": get_val(extracted, "bound_west"), "Boundary (HI)": get_hindi(extracted, "bound_west"), "Conf.": conf_badge(get_conf(extracted, "dim_west"))},
-                    {"Dir.": "North", "Dim. (EN)": get_val(extracted, "dim_north"), "Dim. (HI)": get_hindi(extracted, "dim_north"), "Boundary (EN)": get_val(extracted, "bound_north"), "Boundary (HI)": get_hindi(extracted, "bound_north"), "Conf.": conf_badge(get_conf(extracted, "dim_north"))},
-                    {"Dir.": "South", "Dim. (EN)": get_val(extracted, "dim_south"), "Dim. (HI)": get_hindi(extracted, "dim_south"), "Boundary (EN)": get_val(extracted, "bound_south"), "Boundary (HI)": get_hindi(extracted, "bound_south"), "Conf.": conf_badge(get_conf(extracted, "dim_south"))},
-                ]))
-                st.markdown('</div>', unsafe_allow_html=True)
-
-                # Download button is now outside of tabs and inside a clean full-width container
-                st.markdown("---")
-                st.markdown("### 📥 Download Report")
-                
-                col_bank, _ = st.columns([1, 1])
-                with col_bank:
-                    bank_names = list(BANK_CONFIGS.keys())
-                    selected_bank = st.selectbox(
-                        "Select Bank Template",
-                        bank_names,
-                        key="bank_selector",
-                    )
-                
-                download_container = st.container()
             st.markdown("### ✨ Key Property Metrics")
             col1, col2, col3, col4 = st.columns(4)
             with col1:
