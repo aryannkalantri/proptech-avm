@@ -114,20 +114,19 @@ def inject_into_excel(data: dict) -> io.BytesIO:
     ws = wb.active
     
     # --- CELL MAPPING ---
-    ws['B5'] = data.get('customer_name', 'N/A')
-    ws['B6'] = data.get('property_address', 'N/A')
+    ws['D11'] = data.get('customer_name', 'N/A')
+    ws['D23'] = data.get('property_address', 'N/A')
     
-    ws['B11'] = data.get('total_land_area', 'N/A')
-    ws['B12'] = data.get('built_up_area', 'N/A')
+    ws['E54'] = data.get('total_land_area', 'N/A')
+    ws['C88'] = data.get('built_up_area', 'N/A')
     
-    ws['E11'] = data.get('east_boundary', 'N/A')
-    ws['E12'] = data.get('west_boundary', 'N/A')
-    ws['E13'] = data.get('north_boundary', 'N/A')
-    ws['E14'] = data.get('south_boundary', 'N/A')
+    ws['B52'] = data.get('east_boundary', 'N/A')
+    ws['B53'] = data.get('west_boundary', 'N/A')
+    ws['B50'] = data.get('north_boundary', 'N/A')
+    ws['B51'] = data.get('south_boundary', 'N/A')
     
-    # Usually currency values need cleaning, but inserting raw mapped strings for sandbox purposes
-    ws['B19'] = data.get('fair_market_value', 'N/A')
-    ws['B20'] = data.get('distress_value', 'N/A')
+    ws['J121'] = data.get('fair_market_value', 'N/A')
+    ws['J122'] = data.get('distress_value', 'N/A')
     
     # Save the modified workbook to a binary memory stream
     output_stream = io.BytesIO()
