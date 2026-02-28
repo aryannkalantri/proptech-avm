@@ -164,7 +164,13 @@ def inject_into_excel(data: dict) -> io.BytesIO:
     
     # data_only=False ensures existing formulas (like B20/B19) remain intact
     wb = openpyxl.load_workbook(template_path, data_only=False)
-    ws = wb.active
+    
+    # AppleScript .numbers export creates an 'Export Summary' as the active sheet.
+    # We must explicitly target 'Sheet1' which holds the actual Valuation layout.
+    if 'Sheet1' in wb.sheetnames:
+        ws = wb['Sheet1']
+    else:
+        ws = wb.active
     
     # --- CELL MAPPING (With Style Preservation) ---
     inject_value_preserve_style(ws, 'D10', data.get('report_date', 'N/A'))
