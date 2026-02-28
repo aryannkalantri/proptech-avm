@@ -60,12 +60,39 @@ def extract_data_via_gemini(images: list) -> dict:
     
     prompt = """
     You are an expert Data Extractor. Read these scanned pages of a property valuation report. 
-    Extract the data and return a strict JSON object with these keys: 
-    customer_name, property_address, total_land_area, built_up_area, 
-    east_boundary, west_boundary, north_boundary, south_boundary, 
-    fair_market_value, distress_value. 
-    
-    If a value is missing, return "N/A". Return ONLY the raw JSON object, without markdown formatting.
+    Extract the data and return a strict JSON object. If a value is missing, return "N/A". Return ONLY the raw JSON object, without markdown formatting.
+
+    Extract these exact keys:
+    "report_date" -> Date of report
+    "owner_name" -> Name of the property owner/borrower
+    "sale_deed_no" -> Sale deed number
+    "plot_no" -> Plot Number / Khasra No / Patta No
+    "road_width" -> Width of the road
+    "colony" -> Colony / Nagar / Sector
+    "landmark" -> Locality / Landmark
+    "city" -> Village / Town / City
+    "pincode" -> Pincode
+    "lat" -> Latitude
+    "lon" -> Longitude
+    "property_type" -> Type of Property (e.g. Residential, Commercial)
+    "land_level" -> Level of land with topographical conditions
+    "construction_observed" -> Any construction observed on plot
+    "civic_amenities" -> Civic Amenities like school, hospital etc
+    "transport_availability" -> Availability of local transport
+    "plot_area_doc" -> Plot Area as per documents (Sqft)
+    "plot_area_actual" -> Plot area as per actual site (Sqft)
+    "north_boundary", "south_boundary", "east_boundary", "west_boundary" -> Boundaries out of actual site
+    "structure_type" -> Type of Structure
+    "no_of_floors" -> No. of Floors
+    "occupancy" -> Occupancy Details (Self-Occupied / Rented / Vacant)
+    "current_life_years" -> Current Life of the structure in years
+    "projected_life_years" -> Projected Life of the Structure in years
+    "land_rate" -> Rate per Sq.Ft for Land
+    "land_value" -> Amount in Rs for Land
+    "building_rate" -> Rate per Sq.Ft for Building
+    "building_value" -> Amount in Rs for Building
+    "total_market_value" -> Market value Total Valuation in numbers
+    "distress_value" -> Distressed / Forced Sale Value
     """
     
     # Send all images + prompt in a single list payload
@@ -114,18 +141,43 @@ def inject_into_excel(data: dict) -> io.BytesIO:
     ws = wb.active
     
     # --- CELL MAPPING ---
-    ws['D11'] = data.get('customer_name', 'N/A')
-    ws['D23'] = data.get('property_address', 'N/A')
+    ws['D10'] = data.get('report_date', 'N/A')
+    ws['D11'] = data.get('owner_name', 'N/A')
+    ws['D22'] = data.get('sale_deed_no', 'N/A')
+    ws['D23'] = data.get('plot_no', 'N/A')
+    ws['J23'] = data.get('road_width', 'N/A')
+    ws['D24'] = data.get('colony', 'N/A')
+    ws['J24'] = data.get('landmark', 'N/A')
+    ws['D25'] = data.get('city', 'N/A')
+    ws['J26'] = data.get('pincode', 'N/A')
+    ws['E28'] = data.get('lat', 'N/A')
+    ws['K28'] = data.get('lon', 'N/A')
     
-    ws['E54'] = data.get('total_land_area', 'N/A')
-    ws['C88'] = data.get('built_up_area', 'N/A')
+    ws['G31'] = data.get('property_type', 'N/A')
+    ws['G32'] = data.get('land_level', 'N/A')
+    ws['G33'] = data.get('construction_observed', 'N/A')
+    ws['G37'] = data.get('civic_amenities', 'N/A')
+    ws['G41'] = data.get('transport_availability', 'N/A')
     
-    ws['B52'] = data.get('east_boundary', 'N/A')
-    ws['B53'] = data.get('west_boundary', 'N/A')
-    ws['B50'] = data.get('north_boundary', 'N/A')
-    ws['B51'] = data.get('south_boundary', 'N/A')
+    ws['E54'] = data.get('plot_area_doc', 'N/A')
+    ws['K54'] = data.get('plot_area_actual', 'N/A')
     
-    ws['J121'] = data.get('fair_market_value', 'N/A')
+    ws['H52'] = data.get('east_boundary', 'N/A')
+    ws['H53'] = data.get('west_boundary', 'N/A')
+    ws['H50'] = data.get('north_boundary', 'N/A')
+    ws['H51'] = data.get('south_boundary', 'N/A')
+    
+    ws['G61'] = data.get('structure_type', 'N/A')
+    ws['G62'] = data.get('no_of_floors', 'N/A')
+    ws['G63'] = data.get('occupancy', 'N/A')
+    ws['E100'] = data.get('current_life_years', 'N/A')
+    ws['K100'] = data.get('projected_life_years', 'N/A')
+    
+    ws['G107'] = data.get('land_rate', 'N/A')
+    ws['J107'] = data.get('land_value', 'N/A')
+    ws['G108'] = data.get('building_rate', 'N/A')
+    ws['J108'] = data.get('building_value', 'N/A')
+    ws['J121'] = data.get('total_market_value', 'N/A')
     ws['J122'] = data.get('distress_value', 'N/A')
     
     # Save the modified workbook to a binary memory stream
@@ -156,27 +208,25 @@ if uploaded_pdf is not None:
         st.success("Extraction Complete")
         
         # 3. Render Metrics
-        st.markdown("### 📊 Extracted Data")
+        st.markdown("### 📊 Bulk Data Migration Overview")
+        st.info("Successfully extracted and compiled all comprehensive valuation parameters from the legacy PDF. Generating Excel package...")
         
-        col1, col2 = st.columns(2)
+        col1, col2, col3 = st.columns(3)
         with col1:
-            st.metric("Customer Name", extracted_data.get('customer_name'))
-            st.metric("Total Land Area", extracted_data.get('total_land_area'))
-            st.metric("Fair Market Value", extracted_data.get('fair_market_value'))
+            st.metric("Owner Name", extracted_data.get('owner_name', 'N/A'))
+            st.metric("Property Type", extracted_data.get('property_type', 'N/A'))
+            st.metric("City", extracted_data.get('city', 'N/A'))
         with col2:
-            st.metric("Distress Value", extracted_data.get('distress_value'))
-            st.metric("Built Up Area", extracted_data.get('built_up_area'))
+            st.metric("Plot Area (Doc)", extracted_data.get('plot_area_doc', 'N/A'))
+            st.metric("Plot Area (Actual)", extracted_data.get('plot_area_actual', 'N/A'))
+            st.metric("No. of Floors", extracted_data.get('no_of_floors', 'N/A'))
+        with col3:
+            st.metric("Total Market Value", extracted_data.get('total_market_value', 'N/A'))
+            st.metric("Distress Value", extracted_data.get('distress_value', 'N/A'))
+            st.metric("Land Value", extracted_data.get('land_value', 'N/A'))
             
-        st.markdown("### 🧭 Boundaries")
-        st.markdown(f"""
-        - **North:** {extracted_data.get('north_boundary')}
-        - **South:** {extracted_data.get('south_boundary')}
-        - **East:** {extracted_data.get('east_boundary')}
-        - **West:** {extracted_data.get('west_boundary')}
-        """)
-        
-        st.markdown("### 📍 Address")
-        st.info(extracted_data.get('property_address'))
+        with st.expander("Show All Extracted Fields"):
+            st.json(extracted_data)
         
         st.markdown("---")
         
@@ -187,7 +237,7 @@ if uploaded_pdf is not None:
             st.download_button(
                 label="📥 Download Injected Axis Template (.xlsx)",
                 data=excel_bytes,
-                file_name=f"{extracted_data.get('customer_name', 'Report')}_Axis_Format.xlsx",
+                file_name=f"{extracted_data.get('owner_name', 'Report')}_Axis_Format.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 type="primary",
                 use_container_width=True
