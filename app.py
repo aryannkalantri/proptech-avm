@@ -229,6 +229,48 @@ EXTRACTION_PROMPT = (
     "7. If the document is in English only, set value_hi to the same text as value."
 )
 
+EXTRACTION_PROMPT_FORMAT_CONVERTER = """
+You are an expert Data Extractor. Read these scanned pages of a property valuation report. 
+Extract the data and return a strict JSON object. If a value is missing, return "N/A". Return ONLY the raw JSON object, without markdown formatting.
+
+Extract these exact keys:
+"report_date" -> Date of report
+"owner_name" -> Name of the property owner/borrower
+"sale_deed_no" -> Sale deed number
+"plot_no" -> Plot Number / Khasra No / Patta No
+"road_width" -> Width of the road
+"colony" -> Colony / Nagar / Sector
+"landmark" -> Locality / Landmark
+"city" -> Village / Town / City
+"pincode" -> Pincode
+"lat" -> Latitude
+"lon" -> Longitude
+"property_type" -> Type of Property (e.g. Residential, Commercial)
+"land_level" -> Level of land with topographical conditions
+"construction_observed" -> Any construction observed on plot
+"civic_amenities" -> Civic Amenities like school, hospital etc
+"transport_availability" -> Availability of local transport
+"plot_area_doc" -> Plot Area as per documents (Sqft)
+"plot_area_actual" -> Plot area as per actual site (Sqft)
+"approved_built_up_area" -> Approved Built Up Area (in Sq.Ft.)
+"north_boundary", "south_boundary", "east_boundary", "west_boundary" -> Boundaries as per actual site
+"structure_type" -> Type of Structure
+"occupancy" -> Occupancy Details (Self-Occupied / Rented / Vacant)
+"current_life_years" -> Current Life of the structure in years
+"projected_life_years" -> Projected Life of the Structure in years
+"area_basement" -> Constructed area of Basement (in Sq.Ft., N/A if 0 or none)
+"area_ground_floor" -> Constructed area of Ground Floor (in Sq.Ft., N/A if 0 or none)
+"area_first_floor" -> Constructed area of First Floor (in Sq.Ft., N/A if 0 or none)
+"area_second_floor" -> Constructed area of Second Floor (in Sq.Ft., N/A if 0 or none)
+"area_third_floor" -> Constructed area of Third Floor (in Sq.Ft., N/A if 0 or none)
+"land_rate" -> Rate per Sq.Ft for Land
+"land_value" -> Amount in Rs for Land
+"building_rate" -> Rate per Sq.Ft for Building
+"building_value" -> Amount in Rs for Building
+"total_market_value" -> Market value Total Valuation in numbers
+"distress_value" -> Distressed / Forced Sale Value
+"""
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Bank template registry — add new banks here
 # ─────────────────────────────────────────────────────────────────────────────
@@ -312,6 +354,150 @@ def extract_with_gemini(api_key: str, images: list, model_name: str = "gemini-2.
         return json.loads(clean), raw_text
     except json.JSONDecodeError as exc:
         raise ValueError(f"Gemini returned non-JSON output: {exc}") from exc
+
+
+def extract_format_converter_with_gemini(api_key: str, images: list):
+    """Sends the PIL images to Gemini and requests strictly formatted JSON for the Axis format."""
+    client = genai.Client(api_key=api_key)
+    payload = images + [EXTRACTION_PROMPT_FORMAT_CONVERTER]
+    
+    try:
+        with st.spinner("🧠 Initializing Format Shifting Engine (Gemini 2.5 Pro)..."):
+            response = client.models.generate_content(
+                model="gemini-2.5-pro",
+                contents=payload,
+            )
+    except Exception as e:
+        if "429" in str(e) or "Quota exceeded" in str(e):
+            st.warning("⚠️ Gemini 2.5 Pro rate limit reached. Automatically falling back to high-capacity Gemini 2.5 Flash model...")
+            with st.spinner("⚡ Re-running extraction with Gemini 2.5 Flash..."):
+                response = client.models.generate_content(
+                    model="gemini-2.5-flash",
+                    contents=payload,
+                )
+        else:
+            raise e
+
+    raw_text = response.text.strip()
+    if raw_text.startswith("```json"):
+        raw_text = raw_text[7:]
+    if raw_text.endswith("```"):
+        raw_text = raw_text[:-3]
+        
+    try:
+        return json.loads(raw_text.strip()), raw_text
+    except Exception as e:
+        return {}, str(e)
+
+
+from copy import copy
+
+def inject_value_preserve_style(ws, coord, value):
+    """Injects a value into a cell while strictly maintaining its original Excel formatting."""
+    target_cell = ws[coord]
+    
+    # Cache the original styles before overwriting
+    original_font = copy(target_cell.font) if target_cell.font else None
+    original_border = copy(target_cell.border) if target_cell.border else None
+    original_fill = copy(target_cell.fill) if target_cell.fill else None
+    original_number_format = copy(target_cell.number_format) if target_cell.number_format else None
+    original_protection = copy(target_cell.protection) if target_cell.protection else None
+    original_alignment = copy(target_cell.alignment) if target_cell.alignment else None
+
+    # Inject Value
+    target_cell.value = value
+    
+    # Re-apply styles
+    if original_font: target_cell.font = original_font
+    if original_border: target_cell.border = original_border
+    if original_fill: target_cell.fill = original_fill
+    if original_number_format: target_cell.number_format = original_number_format
+    if original_protection: target_cell.protection = original_protection
+    if original_alignment: target_cell.alignment = original_alignment
+
+
+def generate_axis_report(data: dict) -> io.BytesIO:
+    """Loads the target template, maps the extracted JSON to specific cells, and returns a BytesIO buffer."""
+    template_path = "templates/axis_template.xlsx"
+    
+    wb = openpyxl.load_workbook(template_path, data_only=False)
+    
+    if 'Sheet1' in wb.sheetnames:
+        ws = wb['Sheet1']
+    else:
+        ws = wb.active
+    
+    inject_value_preserve_style(ws, 'D10', data.get('report_date', 'N/A'))
+    inject_value_preserve_style(ws, 'D11', data.get('owner_name', 'N/A'))
+    inject_value_preserve_style(ws, 'D22', data.get('sale_deed_no', 'N/A'))
+    inject_value_preserve_style(ws, 'D23', data.get('plot_no', 'N/A'))
+    inject_value_preserve_style(ws, 'J23', data.get('road_width', 'N/A'))
+    inject_value_preserve_style(ws, 'D24', data.get('colony', 'N/A'))
+    inject_value_preserve_style(ws, 'J24', data.get('landmark', 'N/A'))
+    inject_value_preserve_style(ws, 'D25', data.get('city', 'N/A'))
+    inject_value_preserve_style(ws, 'J26', data.get('pincode', 'N/A'))
+    inject_value_preserve_style(ws, 'E28', data.get('lat', 'N/A'))
+    inject_value_preserve_style(ws, 'K28', data.get('lon', 'N/A'))
+    
+    inject_value_preserve_style(ws, 'G31', data.get('property_type', 'N/A'))
+    inject_value_preserve_style(ws, 'G32', data.get('land_level', 'N/A'))
+    inject_value_preserve_style(ws, 'G33', data.get('construction_observed', 'N/A'))
+    inject_value_preserve_style(ws, 'G37', data.get('civic_amenities', 'N/A'))
+    inject_value_preserve_style(ws, 'G41', data.get('transport_availability', 'N/A'))
+    
+    inject_value_preserve_style(ws, 'E54', data.get('plot_area_doc', 'N/A'))
+    inject_value_preserve_style(ws, 'K54', data.get('plot_area_actual', 'N/A'))
+    
+    inject_value_preserve_style(ws, 'H52', data.get('east_boundary', 'N/A'))
+    inject_value_preserve_style(ws, 'H53', data.get('west_boundary', 'N/A'))
+    inject_value_preserve_style(ws, 'H50', data.get('north_boundary', 'N/A'))
+    inject_value_preserve_style(ws, 'H51', data.get('south_boundary', 'N/A'))
+    
+    inject_value_preserve_style(ws, 'B52', data.get('east_boundary', 'N/A'))
+    inject_value_preserve_style(ws, 'B53', data.get('west_boundary', 'N/A'))
+    inject_value_preserve_style(ws, 'B50', data.get('north_boundary', 'N/A'))
+    inject_value_preserve_style(ws, 'B51', data.get('south_boundary', 'N/A'))
+    
+    inject_value_preserve_style(ws, 'K78', data.get('approved_built_up_area', 'N/A'))
+    
+    inject_value_preserve_style(ws, 'C83', data.get('area_basement', 'N/A'))
+    inject_value_preserve_style(ws, 'C84', data.get('area_ground_floor', 'N/A'))
+    inject_value_preserve_style(ws, 'C85', data.get('area_first_floor', 'N/A'))
+    inject_value_preserve_style(ws, 'C86', data.get('area_second_floor', 'N/A'))
+    inject_value_preserve_style(ws, 'C87', data.get('area_third_floor', 'N/A'))
+    
+    valid_floors = 0
+    areas = [
+        data.get('area_basement', 'N/A'),
+        data.get('area_ground_floor', 'N/A'),
+        data.get('area_first_floor', 'N/A'),
+        data.get('area_second_floor', 'N/A'),
+        data.get('area_third_floor', 'N/A')
+    ]
+    for a in areas:
+        val = str(a).upper().strip()
+        if val != 'N/A' and val != '0' and val != '':
+            valid_floors += 1
+            
+    inject_value_preserve_style(ws, 'G62', valid_floors if valid_floors > 0 else 'N/A')
+    
+    inject_value_preserve_style(ws, 'G61', data.get('structure_type', 'N/A'))
+    inject_value_preserve_style(ws, 'G63', data.get('occupancy', 'N/A'))
+    inject_value_preserve_style(ws, 'E100', data.get('current_life_years', 'N/A'))
+    inject_value_preserve_style(ws, 'K100', data.get('projected_life_years', 'N/A'))
+    
+    inject_value_preserve_style(ws, 'G107', data.get('land_rate', 'N/A'))
+    inject_value_preserve_style(ws, 'J107', data.get('land_value', 'N/A'))
+    inject_value_preserve_style(ws, 'G108', data.get('building_rate', 'N/A'))
+    inject_value_preserve_style(ws, 'J108', data.get('building_value', 'N/A'))
+    inject_value_preserve_style(ws, 'J121', data.get('total_market_value', 'N/A'))
+    inject_value_preserve_style(ws, 'J122', data.get('distress_value', 'N/A'))
+    
+    output_stream = io.BytesIO()
+    wb.save(output_stream)
+    output_stream.seek(0)
+    
+    return output_stream
 
 
 def get_val(data: dict, key: str, default: str = "N/A") -> str:
@@ -758,6 +944,8 @@ with st.sidebar:
 
         🔗 **Chain of Title** — Upload multiple deeds,
         trace ownership from original to current owner
+        
+        🔄 **Format Converter** — Bulk structural migration to Axis Bank 2026 format
 
         ---
 
@@ -790,7 +978,7 @@ st.markdown(
 )
 mode = st.radio(
     "Choose mode",
-    ["📄 Single Deed", "🌍 Property Insights (No Deed)", "📦 Batch Processing", "🔗 Chain of Title"],
+    ["📄 Single Deed", "🌍 Property Insights (No Deed)", "📦 Batch Processing", "🔗 Chain of Title", "🔄 Format Converter"],
     horizontal=True,
     label_visibility="collapsed",
 )
@@ -1355,7 +1543,7 @@ elif mode == "📦 Batch Processing":
 # ═══════════════════════════════════════════════════════════════════════════════
 # MODE 3: CHAIN OF TITLE
 # ═══════════════════════════════════════════════════════════════════════════════
-else:
+elif mode == "🔗 Chain of Title":
 
     st.markdown('<div class="avm-card">', unsafe_allow_html=True)
     st.markdown('<span class="badge badge-blue">Step 1</span>', unsafe_allow_html=True)
@@ -1521,3 +1709,45 @@ else:
                     """,
                     unsafe_allow_html=True,
                 )
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# MODE 5: FORMAT CONVERTER
+# ═══════════════════════════════════════════════════════════════════════════════
+elif mode == "🔄 Format Converter":
+    st.markdown('<div class="avm-card">', unsafe_allow_html=True)
+    st.markdown("## 🔄 Format Shifting Engine")
+    st.markdown("Upload a scanned PDF valuation report. AI will extract 50+ structural data points and safely inject them into the beautiful **Axis Bank Excel template**.")
+    
+    uploaded_pdf = st.file_uploader("Upload Scanned Report (.pdf)", type=["pdf"], key="converter_upload")
+    
+    if uploaded_pdf:
+        if st.button("🚀 Run Format Conversion", use_container_width=True):
+            # 1. Convert PDF to Images
+            with st.spinner("📄 Rasterizing PDF into high-res images..."):
+                pdf_bytes = uploaded_pdf.read()
+                # Limit to 5 pages natively like the converter does
+                page_images = pdf_to_pil_images(pdf_bytes, dpi=150)[:5]
+            
+            # 2. Extract Data via Gemini
+            extracted_data, raw_text = extract_format_converter_with_gemini(GEMINI_API_KEY, page_images)
+            
+            if extracted_data:
+                st.success("✅ Gemini Data Extraction Complete!")
+                with st.expander("🔍 View Extracted Data Mapping", expanded=False):
+                    st.json(extracted_data)
+                
+                # 3. Inject into Excel
+                with st.spinner("📊 Mapping data to Axis Template cells..."):
+                    excel_buffer = generate_axis_report(extracted_data)
+                
+                # 4. Success Dashboard & Download Button
+                st.markdown("---")
+                st.markdown("### 🎯 Conversion Successful")
+                st.download_button(
+                    label="📥 Download Injected Axis Template (.xlsx)",
+                    data=excel_buffer,
+                    file_name=f"{sanitize_filename(extracted_data.get('owner_name', 'Converted_Report'))}_Axis_Format.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    use_container_width=True,
+                )
+    st.markdown('</div>', unsafe_allow_html=True)
