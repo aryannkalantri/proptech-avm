@@ -1,0 +1,17 @@
+name: Keep Streamlit App Alive
+
+on:
+  schedule:
+    # Run at 00:00 every day (midnight UTC)
+    - cron: '0 0 * * *'
+  # Also allow manual triggers
+  workflow_dispatch:
+
+jobs:
+  ping_streamlit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Streamlit App
+        run: |
+          echo "Pinging the Streamlit app to keep it awake..."
+          curl -I -sS https://proptech-avm.streamlit.app || echo "Failed to reach the app, but curl ran."
