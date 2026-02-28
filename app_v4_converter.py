@@ -81,12 +81,17 @@ def extract_data_via_gemini(images: list) -> dict:
     "transport_availability" -> Availability of local transport
     "plot_area_doc" -> Plot Area as per documents (Sqft)
     "plot_area_actual" -> Plot area as per actual site (Sqft)
-    "north_boundary", "south_boundary", "east_boundary", "west_boundary" -> Boundaries out of actual site
+    "approved_built_up_area" -> Approved Built Up Area (in Sq.Ft.)
+    "north_boundary", "south_boundary", "east_boundary", "west_boundary" -> Boundaries as per actual site
     "structure_type" -> Type of Structure
-    "no_of_floors" -> No. of Floors
     "occupancy" -> Occupancy Details (Self-Occupied / Rented / Vacant)
     "current_life_years" -> Current Life of the structure in years
     "projected_life_years" -> Projected Life of the Structure in years
+    "area_basement" -> Constructed area of Basement (in Sq.Ft., N/A if 0 or none)
+    "area_ground_floor" -> Constructed area of Ground Floor (in Sq.Ft., N/A if 0 or none)
+    "area_first_floor" -> Constructed area of First Floor (in Sq.Ft., N/A if 0 or none)
+    "area_second_floor" -> Constructed area of Second Floor (in Sq.Ft., N/A if 0 or none)
+    "area_third_floor" -> Constructed area of Third Floor (in Sq.Ft., N/A if 0 or none)
     "land_rate" -> Rate per Sq.Ft for Land
     "land_value" -> Amount in Rs for Land
     "building_rate" -> Rate per Sq.Ft for Building
@@ -199,8 +204,36 @@ def inject_into_excel(data: dict) -> io.BytesIO:
     inject_value_preserve_style(ws, 'H50', data.get('north_boundary', 'N/A'))
     inject_value_preserve_style(ws, 'H51', data.get('south_boundary', 'N/A'))
     
+    inject_value_preserve_style(ws, 'B52', data.get('east_boundary', 'N/A'))
+    inject_value_preserve_style(ws, 'B53', data.get('west_boundary', 'N/A'))
+    inject_value_preserve_style(ws, 'B50', data.get('north_boundary', 'N/A'))
+    inject_value_preserve_style(ws, 'B51', data.get('south_boundary', 'N/A'))
+    
+    inject_value_preserve_style(ws, 'K78', data.get('approved_built_up_area', 'N/A'))
+    
+    inject_value_preserve_style(ws, 'C83', data.get('area_basement', 'N/A'))
+    inject_value_preserve_style(ws, 'C84', data.get('area_ground_floor', 'N/A'))
+    inject_value_preserve_style(ws, 'C85', data.get('area_first_floor', 'N/A'))
+    inject_value_preserve_style(ws, 'C86', data.get('area_second_floor', 'N/A'))
+    inject_value_preserve_style(ws, 'C87', data.get('area_third_floor', 'N/A'))
+    
+    # Conditional Floor Count Logic
+    valid_floors = 0
+    areas = [
+        data.get('area_basement', 'N/A'),
+        data.get('area_ground_floor', 'N/A'),
+        data.get('area_first_floor', 'N/A'),
+        data.get('area_second_floor', 'N/A'),
+        data.get('area_third_floor', 'N/A')
+    ]
+    for a in areas:
+        val = str(a).upper().strip()
+        if val != 'N/A' and val != '0' and val != '':
+            valid_floors += 1
+            
+    inject_value_preserve_style(ws, 'G62', valid_floors if valid_floors > 0 else 'N/A')
+    
     inject_value_preserve_style(ws, 'G61', data.get('structure_type', 'N/A'))
-    inject_value_preserve_style(ws, 'G62', data.get('no_of_floors', 'N/A'))
     inject_value_preserve_style(ws, 'G63', data.get('occupancy', 'N/A'))
     inject_value_preserve_style(ws, 'E100', data.get('current_life_years', 'N/A'))
     inject_value_preserve_style(ws, 'K100', data.get('projected_life_years', 'N/A'))
