@@ -245,6 +245,34 @@ Extract these exact keys:
 "site_remarks" -> Short string summarizing any risk notes, remarks, or observations from the valuer.
 """
 
+TRUTH_ENGINE_DISCREPANCY_PROMPT = """
+You are a Senior Risk Officer at a Bank. I am giving you two things:
+1. The structured JSON data extracted from the legal property deed.
+2. The handwritten site visit sketch/notes from our field valuer (which may be in English or Hinglish).
+
+Your job is to compare the legal deed data against the actual ground reality from the field sketch and find ANY AND ALL discrepancies, risks, or mismatches. 
+
+Do not limit yourself to just area or boundaries. Look for:
+- Mismatched land sizes or property dimensions.
+- Boundary neighbors that don't match (e.g., Deed says North is "Empty Plot", Sketch says "3-Story Building").
+- Mentions of illegal extensions, encroachments, or unauthorized occupation.
+- Property type mismatches (Deed says Residential, Sketch says Commercial usage).
+- Floor count discrepancies (e.g., Unapproved floors built).
+- Any other physical risks noted by the runner.
+
+Return a STRICT JSON object in this exact format. If no discrepancies are found, return an empty array for "discrepancies". Do NOT return markdown.
+{
+  "risk_level": "HIGH" | "MEDIUM" | "LOW" | "NONE",
+  "discrepancies": [
+    {
+       "type": "AREA_MISMATCH" | "BOUNDARY_MISMATCH" | "ENCROACHMENT" | "USAGE_MISMATCH" | "OTHER",
+       "severity": "HIGH" | "MEDIUM" | "LOW",
+       "description": "Clear explanation of the mismatch between the legal deed and the site sketch."
+    }
+  ]
+}
+"""
+
 EXTRACTION_PROMPT_FORMAT_CONVERTER = """
 You are an expert Data Extractor. Read these scanned pages of a property valuation report. 
 Extract the data and return a strict JSON object. If a value is missing, return "N/A". Return ONLY the raw JSON object, without markdown formatting.
@@ -435,6 +463,51 @@ def extract_site_visit_sketch(api_key: str, images: list):
         return json.loads(raw_text.strip()), raw_text
     except Exception as e:
         return {}, str(e)
+
+
+def run_truth_engine_discrepancy_check(api_key: str, deed_json: dict, site_images: list):
+    """Sends the parsed deed JSON and the raw site sketch images to Gemini to find arbitrary discrepancies."""
+    client = genai.Client(api_key=api_key)
+    
+    # We only send the core critical parsed details to save token context and focus the model
+    clean_deed = {
+        "address": get_val(deed_json, "address"),
+        "land_area": get_val(deed_json, "land_area"),
+        "boundaries": {
+            "North": get_val(deed_json, "bound_north"),
+            "South": get_val(deed_json, "bound_south"),
+            "East": get_val(deed_json, "bound_east"),
+            "West": get_val(deed_json, "bound_west")
+        }
+    }
+    
+    prompt = TRUTH_ENGINE_DISCREPANCY_PROMPT + f"\n\nDEED JSON:\n{json.dumps(clean_deed)}"
+    payload = site_images + [prompt]
+    
+    try:
+        response = client.models.generate_content(
+            model="gemini-2.5-pro",
+            contents=payload,
+        )
+    except Exception as e:
+        if "429" in str(e) or "Quota exceeded" in str(e):
+            response = client.models.generate_content(
+                model="gemini-2.5-flash",
+                contents=payload,
+            )
+        else:
+            raise e
+
+    raw_text = response.text.strip()
+    if raw_text.startswith("```json"):
+        raw_text = raw_text[7:]
+    if raw_text.endswith("```"):
+        raw_text = raw_text[:-3]
+        
+    try:
+        return json.loads(raw_text.strip()), raw_text
+    except Exception as e:
+        return {"risk_level": "ERROR", "discrepancies": [{"type": "ERROR", "severity": "HIGH", "description": str(e)}]}, str(e)
 
 
 from copy import copy
@@ -1134,15 +1207,23 @@ if mode == "📄 Single Deed":
                             st.session_state["raw_response"]   = None
                             
                     if site_render_ok and site_images:
-                        with st.spinner("Analyzing handwritten Site Sketch…"):
+                        with st.spinner("Analyzing handwritten Site Sketch & Running Truth Engine…"):
                             try:
+                                # 1. Extract raw data for Excel Injection
                                 site_extracted, site_raw = extract_site_visit_sketch(
                                     GEMINI_API_KEY, site_images
                                 )
                                 st.session_state["site_extracted_data"] = site_extracted
-                                st.success("Site Sketch Extraction complete!", icon="✅")
+                                
+                                # 2. Run the new arbitrary discrepancy checker
+                                truth_engine_json, truth_engine_raw = run_truth_engine_discrepancy_check(
+                                    GEMINI_API_KEY, extracted_data, site_images
+                                )
+                                st.session_state["truth_engine_data"] = truth_engine_json
+                                
+                                st.success("Site Sketch Extraction & Truth Engine complete!", icon="✅")
                             except Exception as exc:
-                                st.error(f"Failed to extract site sketch: {exc}")
+                                st.error(f"Failed to process site sketch: {exc}")
 
             st.markdown("</div>", unsafe_allow_html=True)
 
@@ -1185,31 +1266,43 @@ if mode == "📄 Single Deed":
                 """)
                 
             # ── TRUTH ENGINE: Site Verification ──────────────────────────────
-            if site_extracted:
+            if site_extracted and st.session_state.get("truth_engine_data"):
                 st.markdown("---")
                 st.markdown('<span class="badge badge-red">Truth Engine</span>', unsafe_allow_html=True)
                 st.markdown("### ⚠️ AI Risk & Discrepancy Insights")
                 
-                legal_area = get_val(extracted, "land_area")
-                actual_area = site_extracted.get("actual_land_area", "N/A")
-                encroachment = site_extracted.get("illegal_occupation_or_encroachment", False)
+                truth_data = st.session_state["truth_engine_data"]
+                risk_level = truth_data.get("risk_level", "NONE")
+                discrepancies = truth_data.get("discrepancies", [])
                 
-                col_te1, col_te2 = st.columns(2)
-                with col_te1:
-                    st.metric("Deed Area (Legal)", legal_area or "N/A")
-                with col_te2:
-                    st.metric("Site Sketch Area (Actual)", actual_area)
-                
-                st.markdown("#### Discrepancy Engine Flags")
-                # Very basic string comparison for demo logic. Real life would use NLP/regex conversion of units.
-                if str(legal_area).lower().replace(" ","") != str(actual_area).lower().replace(" ","") and actual_area != "N/A" and legal_area:
-                     st.warning(f"⚠️ **Area Mismatch:** Legal deed states {legal_area} but site inspection notes {actual_area}.")
-                
-                if encroachment is True or str(encroachment).lower() == 'true':
-                     st.error("🚨 **Encroachment / Illegal Occupation Flag:** The field runner noted unauthorized construction or occupation on the property.")
-                elif encroachment is False or str(encroachment).lower() == 'false':
-                     st.success("✅ **Clear Title:** No illegal occupation or encroachments noted onsite.")
-                     
+                if risk_level == "HIGH":
+                    st.error(f"**Overall Risk Level:** {risk_level}")
+                elif risk_level == "MEDIUM":
+                    st.warning(f"**Overall Risk Level:** {risk_level}")
+                else:
+                    st.success(f"**Overall Risk Level:** Clear / {risk_level}")
+                    
+                if not discrepancies:
+                    st.success("✅ **No discrepancies detected** between the legal deed and the field runner's sketch.")
+                else:
+                    st.markdown("#### Detected Discrepancies")
+                    for d in discrepancies:
+                        d_type = d.get('type', 'OTHER')
+                        d_sev = d.get('severity', 'LOW')
+                        d_desc = d.get('description', '')
+                        
+                        icon = "🔴" if d_sev == "HIGH" else "🟡" if d_sev == "MEDIUM" else "🔵"
+                        
+                        st.markdown(
+                            f"""
+                            <div style="background-color: #fffaf0; border-left: 4px solid {'#e53e3e' if d_sev == 'HIGH' else '#dd6b20'}; padding: 1rem; margin-bottom: 0.5rem; border-radius: 4px;">
+                                <div style="font-weight: 600; font-size: 1.05rem; margin-bottom: 0.25rem;">{icon} {d_type.replace('_', ' ')}</div>
+                                <div style="color: #4a5568; font-size: 0.95rem;">{d_desc}</div>
+                            </div>
+                            """, 
+                            unsafe_allow_html=True
+                        )
+                        
                 remarks = site_extracted.get("site_remarks", "")
                 if remarks and remarks != "N/A":
                      st.info(f"**Field Runner Remarks:** {remarks}")
