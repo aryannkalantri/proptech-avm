@@ -229,6 +229,22 @@ EXTRACTION_PROMPT = (
     "7. If the document is in English only, set value_hi to the same text as value."
 )
 
+EXTRACTION_PROMPT_SITE_VISIT = """
+You are a Senior Technical Valuer. Read this field runner's sketch/notes. The text may be in English or Hinglish. 
+Extract the ACTUAL onsite details into a strict JSON object. If a value is missing or unreadable, return "N/A".
+Return ONLY the raw JSON object, without markdown formatting.
+
+Extract these exact keys:
+"actual_north" -> Actual North boundary property/road
+"actual_south" -> Actual South boundary property/road
+"actual_east" -> Actual East boundary property/road
+"actual_west" -> Actual West boundary property/road
+"actual_land_area" -> Actual constructed/measured land area on site
+"construction_stage" -> Stage of construction (e.g., Vacant, Under Construction, Fully Constructed)
+"illegal_occupation_or_encroachment" -> true if there are mentions of illegal occupation, extensions outside bounds, or encroachments. False otherwise.
+"site_remarks" -> Short string summarizing any risk notes, remarks, or observations from the valuer.
+"""
+
 EXTRACTION_PROMPT_FORMAT_CONVERTER = """
 You are an expert Data Extractor. Read these scanned pages of a property valuation report. 
 Extract the data and return a strict JSON object. If a value is missing, return "N/A". Return ONLY the raw JSON object, without markdown formatting.
@@ -375,6 +391,37 @@ def extract_format_converter_with_gemini(api_key: str, images: list):
                     model="gemini-2.5-flash",
                     contents=payload,
                 )
+        else:
+            raise e
+
+    raw_text = response.text.strip()
+    if raw_text.startswith("```json"):
+        raw_text = raw_text[7:]
+    if raw_text.endswith("```"):
+        raw_text = raw_text[:-3]
+        
+    try:
+        return json.loads(raw_text.strip()), raw_text
+    except Exception as e:
+        return {}, str(e)
+
+
+def extract_site_visit_sketch(api_key: str, images: list):
+    """Sends the PIL images to Gemini to extract ground truth from field runner handwritten sketches."""
+    client = genai.Client(api_key=api_key)
+    payload = images + [EXTRACTION_PROMPT_SITE_VISIT]
+    
+    try:
+        response = client.models.generate_content(
+            model="gemini-2.5-pro",
+            contents=payload,
+        )
+    except Exception as e:
+        if "429" in str(e) or "Quota exceeded" in str(e):
+            response = client.models.generate_content(
+                model="gemini-2.5-flash",
+                contents=payload,
+            )
         else:
             raise e
 
@@ -992,15 +1039,20 @@ if mode == "📄 Single Deed":
     st.markdown("### 📄 Upload Property Document")
     st.markdown("Upload a scanned property deed PDF — any number of pages, printed or handwritten Hindi.")
 
-    uploaded_pdf = st.file_uploader(
-        "Drop your PDF here",
+    deed_file = st.file_uploader(
+        "Step 1: Upload Property Document (Mandatory)",
         type=["pdf"],
-        label_visibility="collapsed",
         key="single_upload",
+    )
+    
+    site_file = st.file_uploader(
+        "Step 2: Upload Site Visit Sheet / Sketch (Optional)",
+        type=["pdf", "png", "jpg", "jpeg"],
+        key="site_upload",
     )
     st.markdown("</div>", unsafe_allow_html=True)
 
-    if uploaded_pdf is not None:
+    if deed_file is not None:
 
         col_img, col_results = st.columns([1, 1.4], gap="large")
 
@@ -1011,7 +1063,7 @@ if mode == "📄 Single Deed":
 
             with st.spinner("Rendering all pages…"):
                 try:
-                    pdf_bytes = uploaded_pdf.read()
+                    pdf_bytes = deed_file.read()
                     page_images = pdf_to_pil_images(pdf_bytes, dpi=300)
                     num_pages = len(page_images)
 
@@ -1026,6 +1078,24 @@ if mode == "📄 Single Deed":
                 except Exception as exc:
                     st.error(f"Failed to render PDF: {exc}")
                     render_ok = False
+                    
+            if site_file is not None:
+                st.markdown("---")
+                st.markdown("#### Site Sketch Preview")
+                try:
+                    if site_file.name.lower().endswith('.pdf'):
+                        site_bytes = site_file.read()
+                        site_images = pdf_to_pil_images(site_bytes, dpi=200)
+                    else:
+                        site_images = [Image.open(site_file)]
+                    st.image(site_images[0], use_container_width=True, caption="Site Visit Sketch")
+                    site_render_ok = True
+                except Exception as exc:
+                    st.error(f"Failed to render site sketch: {exc}")
+                    site_render_ok = False
+            else:
+                site_render_ok = False
+                site_images = []
 
             st.markdown("</div>", unsafe_allow_html=True)
 
@@ -1039,7 +1109,10 @@ if mode == "📄 Single Deed":
             elif not render_ok:
                 st.error("Cannot extract — PDF rendering failed in Step 2.")
             else:
-                if st.button("⚡ Extract Property Data", use_container_width=True, key="single_extract"):
+                if st.button("⚡ Run AI Analysis", use_container_width=True, key="single_extract", type="primary"):
+                    st.session_state["extracted_data"] = None
+                    st.session_state["site_extracted_data"] = None
+                    
                     spinner_msg = f"Analyzing {num_pages} page{'s' if num_pages > 1 else ''} with Gemini Vision…"
                     with st.spinner(spinner_msg):
                         try:
@@ -1048,7 +1121,7 @@ if mode == "📄 Single Deed":
                             )
                             st.session_state["extracted_data"] = extracted_data
                             st.session_state["raw_response"]   = raw_response
-                            st.success(f"Extraction complete! ({num_pages} pages analyzed)", icon="✅")
+                            st.success(f"Deed Extraction complete! ({num_pages} pages analyzed)", icon="✅")
                         except ValueError as exc:
                             st.error(str(exc), icon="⚠️")
                             st.session_state["extracted_data"] = None
@@ -1059,12 +1132,24 @@ if mode == "📄 Single Deed":
                                 st.code(traceback.format_exc())
                             st.session_state["extracted_data"] = None
                             st.session_state["raw_response"]   = None
+                            
+                    if site_render_ok and site_images:
+                        with st.spinner("Analyzing handwritten Site Sketch…"):
+                            try:
+                                site_extracted, site_raw = extract_site_visit_sketch(
+                                    GEMINI_API_KEY, site_images
+                                )
+                                st.session_state["site_extracted_data"] = site_extracted
+                                st.success("Site Sketch Extraction complete!", icon="✅")
+                            except Exception as exc:
+                                st.error(f"Failed to extract site sketch: {exc}")
 
             st.markdown("</div>", unsafe_allow_html=True)
 
         # ── Results display ──────────────────────────────────────────────────
         if st.session_state.get("extracted_data"):
             extracted = st.session_state["extracted_data"]
+            site_extracted = st.session_state.get("site_extracted_data")
 
         
             st.markdown('<span class="badge badge-green">Results</span>', unsafe_allow_html=True)
@@ -1099,6 +1184,36 @@ if mode == "📄 Single Deed":
                 - **West:** {get_val(extracted, 'bound_west') or 'N/A'} {conf_badge(get_conf(extracted, 'bound_west'))}
                 """)
                 
+            # ── TRUTH ENGINE: Site Verification ──────────────────────────────
+            if site_extracted:
+                st.markdown("---")
+                st.markdown('<span class="badge badge-red">Truth Engine</span>', unsafe_allow_html=True)
+                st.markdown("### ⚠️ AI Risk & Discrepancy Insights")
+                
+                legal_area = get_val(extracted, "land_area")
+                actual_area = site_extracted.get("actual_land_area", "N/A")
+                encroachment = site_extracted.get("illegal_occupation_or_encroachment", False)
+                
+                col_te1, col_te2 = st.columns(2)
+                with col_te1:
+                    st.metric("Deed Area (Legal)", legal_area or "N/A")
+                with col_te2:
+                    st.metric("Site Sketch Area (Actual)", actual_area)
+                
+                st.markdown("#### Discrepancy Engine Flags")
+                # Very basic string comparison for demo logic. Real life would use NLP/regex conversion of units.
+                if str(legal_area).lower().replace(" ","") != str(actual_area).lower().replace(" ","") and actual_area != "N/A" and legal_area:
+                     st.warning(f"⚠️ **Area Mismatch:** Legal deed states {legal_area} but site inspection notes {actual_area}.")
+                
+                if encroachment is True or str(encroachment).lower() == 'true':
+                     st.error("🚨 **Encroachment / Illegal Occupation Flag:** The field runner noted unauthorized construction or occupation on the property.")
+                elif encroachment is False or str(encroachment).lower() == 'false':
+                     st.success("✅ **Clear Title:** No illegal occupation or encroachments noted onsite.")
+                     
+                remarks = site_extracted.get("site_remarks", "")
+                if remarks and remarks != "N/A":
+                     st.info(f"**Field Runner Remarks:** {remarks}")
+
             # Download button is now outside of tabs and inside a clean full-width container
             st.markdown("---")
             st.markdown("### 📥 Download Report")
@@ -1116,7 +1231,8 @@ if mode == "📄 Single Deed":
             with download_container:
                 try:
                     config = BANK_CONFIGS[selected_bank]
-                    excel_data = generate_bank_report(selected_bank, extracted)
+                    # Pass both the deed payload and the optional site payload to the injector
+                    excel_data = generate_bank_report(selected_bank, extracted, site_data=site_extracted)
                     st.download_button(
                         label=f"⬇️ Download {selected_bank} Report (.xlsx)",
                         data=excel_data,
