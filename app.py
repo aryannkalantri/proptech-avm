@@ -1217,7 +1217,7 @@ if mode == "📄 Single Deed":
                                 
                                 # 2. Run the new arbitrary discrepancy checker
                                 truth_engine_json, truth_engine_raw = run_truth_engine_discrepancy_check(
-                                    GEMINI_API_KEY, extracted_data, site_images
+                                    GEMINI_API_KEY, extracted, site_images
                                 )
                                 st.session_state["truth_engine_data"] = truth_engine_json
                                 
