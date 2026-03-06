@@ -1214,16 +1214,23 @@ if mode == "📄 Single Deed":
                                     GEMINI_API_KEY, site_images
                                 )
                                 st.session_state["site_extracted_data"] = site_extracted
-                                
-                                # 2. Run the new arbitrary discrepancy checker
-                                truth_engine_json, truth_engine_raw = run_truth_engine_discrepancy_check(
-                                    GEMINI_API_KEY, extracted, site_images
-                                )
-                                st.session_state["truth_engine_data"] = truth_engine_json
-                                
-                                st.success("Site Sketch Extraction & Truth Engine complete!", icon="✅")
+                                st.success("Site Sketch Extraction complete!", icon="✅")
                             except Exception as exc:
-                                st.error(f"Failed to process site sketch: {exc}")
+                                st.error(f"Failed to extract site sketch: {exc}")
+                            
+                            # 2. Run the Truth Engine only if BOTH the deed and sketch extracted OK
+                            deed_for_truth = st.session_state.get("extracted_data")
+                            site_for_truth = st.session_state.get("site_extracted_data")
+                            if deed_for_truth and site_for_truth:
+                                try:
+                                    truth_engine_json, truth_engine_raw = run_truth_engine_discrepancy_check(
+                                        GEMINI_API_KEY, deed_for_truth, site_images
+                                    )
+                                    st.session_state["truth_engine_data"] = truth_engine_json
+                                    st.success("Truth Engine analysis complete!", icon="✅")
+                                except Exception as exc:
+                                    st.error(f"Truth Engine failed: {exc}")
+                                    st.session_state["truth_engine_data"] = None
 
             st.markdown("</div>", unsafe_allow_html=True)
 
