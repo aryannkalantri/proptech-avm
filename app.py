@@ -360,19 +360,21 @@ BANK_CONFIGS = {
 # ─────────────────────────────────────────────────────────────────────────────
 
 def pdf_to_pil_images(pdf_bytes: bytes, dpi: int = 150) -> list:
-    """Render ALL pages of a PDF into PIL Images using PyMuPDF (fitz)."""
+    """Render ALL pages of a PDF into PIL Images using PyMuPDF (fitz).
+    Images are downscaled to max 2000px on their longest side to stay
+    memory-safe on Streamlit Cloud (1 GB RAM) while preserving Hindi text clarity.
+    """
     doc = fitz.open(stream=pdf_bytes, filetype="pdf")
     images = []
     zoom = dpi / 72
     mat = fitz.Matrix(zoom, zoom)
-    max_pages = min(len(doc), 20)  # Cap at 20 pages to prevent OOM
-    for i in range(max_pages):
+    for i in range(len(doc)):
         pixmap = doc[i].get_pixmap(matrix=mat, alpha=False)
         img = Image.frombytes("RGB", [pixmap.width, pixmap.height], pixmap.samples)
-        # Downscale if any dimension exceeds 1600px to save memory
+        # Downscale if any dimension exceeds 2000px to save memory
         max_dim = max(img.size)
-        if max_dim > 1600:
-            scale = 1600 / max_dim
+        if max_dim > 2000:
+            scale = 2000 / max_dim
             new_size = (int(img.size[0] * scale), int(img.size[1] * scale))
             img = img.resize(new_size, Image.LANCZOS)
         images.append(img)
@@ -1170,8 +1172,8 @@ if mode == "📄 Single Deed":
                         site_img = Image.open(site_file)
                         # Downscale large images to prevent OOM
                         max_dim = max(site_img.size)
-                        if max_dim > 1600:
-                            scale = 1600 / max_dim
+                        if max_dim > 2000:
+                            scale = 2000 / max_dim
                             new_size = (int(site_img.size[0] * scale), int(site_img.size[1] * scale))
                             site_img = site_img.resize(new_size, Image.LANCZOS)
                         site_images = [site_img]
