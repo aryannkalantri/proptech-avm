@@ -359,15 +359,22 @@ BANK_CONFIGS = {
 # Helper functions
 # ─────────────────────────────────────────────────────────────────────────────
 
-def pdf_to_pil_images(pdf_bytes: bytes, dpi: int = 200) -> list:
+def pdf_to_pil_images(pdf_bytes: bytes, dpi: int = 150) -> list:
     """Render ALL pages of a PDF into PIL Images using PyMuPDF (fitz)."""
     doc = fitz.open(stream=pdf_bytes, filetype="pdf")
     images = []
     zoom = dpi / 72
     mat = fitz.Matrix(zoom, zoom)
-    for i in range(len(doc)):
+    max_pages = min(len(doc), 20)  # Cap at 20 pages to prevent OOM
+    for i in range(max_pages):
         pixmap = doc[i].get_pixmap(matrix=mat, alpha=False)
         img = Image.frombytes("RGB", [pixmap.width, pixmap.height], pixmap.samples)
+        # Downscale if any dimension exceeds 1600px to save memory
+        max_dim = max(img.size)
+        if max_dim > 1600:
+            scale = 1600 / max_dim
+            new_size = (int(img.size[0] * scale), int(img.size[1] * scale))
+            img = img.resize(new_size, Image.LANCZOS)
         images.append(img)
     doc.close()
     return images
@@ -1137,7 +1144,7 @@ if mode == "📄 Single Deed":
             with st.spinner("Rendering all pages…"):
                 try:
                     pdf_bytes = deed_file.read()
-                    page_images = pdf_to_pil_images(pdf_bytes, dpi=300)
+                    page_images = pdf_to_pil_images(pdf_bytes, dpi=150)
                     num_pages = len(page_images)
 
                     st.image(
@@ -1158,9 +1165,16 @@ if mode == "📄 Single Deed":
                 try:
                     if site_file.name.lower().endswith('.pdf'):
                         site_bytes = site_file.read()
-                        site_images = pdf_to_pil_images(site_bytes, dpi=200)
+                        site_images = pdf_to_pil_images(site_bytes, dpi=150)
                     else:
-                        site_images = [Image.open(site_file)]
+                        site_img = Image.open(site_file)
+                        # Downscale large images to prevent OOM
+                        max_dim = max(site_img.size)
+                        if max_dim > 1600:
+                            scale = 1600 / max_dim
+                            new_size = (int(site_img.size[0] * scale), int(site_img.size[1] * scale))
+                            site_img = site_img.resize(new_size, Image.LANCZOS)
+                        site_images = [site_img]
                     st.image(site_images[0], use_container_width=True, caption="Site Visit Sketch")
                     site_render_ok = True
                 except Exception as exc:
