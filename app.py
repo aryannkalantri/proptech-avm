@@ -1142,7 +1142,7 @@ if mode == "📄 Single Deed":
 
                     st.image(
                         page_images[0],
-                        width="stretch",
+                        use_container_width=True,
                         caption=f"Page 1 of {num_pages} · All pages will be analyzed"
                     )
                     if num_pages > 1:
@@ -1161,7 +1161,7 @@ if mode == "📄 Single Deed":
                         site_images = pdf_to_pil_images(site_bytes, dpi=200)
                     else:
                         site_images = [Image.open(site_file)]
-                    st.image(site_images[0], width="stretch", caption="Site Visit Sketch")
+                    st.image(site_images[0], use_container_width=True, caption="Site Visit Sketch")
                     site_render_ok = True
                 except Exception as exc:
                     st.error(f"Failed to render site sketch: {exc}")
@@ -1182,7 +1182,7 @@ if mode == "📄 Single Deed":
             elif not render_ok:
                 st.error("Cannot extract — PDF rendering failed in Step 2.")
             else:
-                if st.button("⚡ Run AI Analysis", width="stretch", key="single_extract", type="primary"):
+                if st.button("⚡ Run AI Analysis", use_container_width=True, key="single_extract", type="primary"):
                     st.session_state["extracted_data"] = None
                     st.session_state["site_extracted_data"] = None
                     
@@ -1339,7 +1339,7 @@ if mode == "📄 Single Deed":
                         file_name=config["output_filename"],
                         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                         type="primary",
-                        width="stretch",
+                        use_container_width=True,
                     )
                 except Exception as e:
                     st.error(f"Failed to generate Excel report: {e}")
@@ -1392,7 +1392,7 @@ if mode == "📄 Single Deed":
                     "and asks Gemini to compare it against the deed data."
                 )
 
-                if st.button("🔍 Run AI Discrepancy Check", width="stretch", key="single_risk_check", type="primary"):
+                if st.button("🔍 Run AI Discrepancy Check", use_container_width=True, key="single_risk_check", type="primary"):
                     with st.spinner("📡 Downloading satellite imagery from multiple sources…"):
                         try:
                             images_dict = get_all_satellite_imagery(sat_lat, sat_lon)
@@ -1407,7 +1407,7 @@ if mode == "📄 Single Deed":
                         for i, (provider, img) in enumerate(images_dict.items()):
                             with cols[i]:
                                 if isinstance(img, Image.Image):
-                                    st.image(img, caption=provider, width="stretch")
+                                    st.image(img, caption=provider, use_container_width=True)
                                 else:
                                     st.error(f"{provider}\n{img}", icon="❌")
 
@@ -1509,7 +1509,7 @@ elif mode == "🌍 Property Insights (No Deed)":
     if ground_img_file:
         try:
             ground_image = Image.open(ground_img_file)
-            st.image(ground_image, caption="Uploaded Property Photo", width="stretch")
+            st.image(ground_image, caption="Uploaded Property Photo", use_container_width=True)
             
             # Try to extract GPS from EXIF
             coords = get_exif_gps_coords(ground_image)
@@ -1537,7 +1537,7 @@ elif mode == "🌍 Property Insights (No Deed)":
     with col2:
         sat_lon = st.number_input("Longitude", value=75.787300, format="%.6f", key="insights_lon")
 
-    if st.button("🔮 Generate Geographic Insights", width="stretch", type="primary"):
+    if st.button("🔮 Generate Geographic Insights", use_container_width=True, type="primary"):
         with st.spinner("📡 Fetching multi-source satellite imagery…"):
             try:
                 images_dict = get_all_satellite_imagery(sat_lat, sat_lon)
@@ -1553,7 +1553,7 @@ elif mode == "🌍 Property Insights (No Deed)":
             for i, (provider, img) in enumerate(images_dict.items()):
                 with cols[i]:
                     if isinstance(img, Image.Image):
-                        st.image(img, caption=provider, width="stretch")
+                        st.image(img, caption=provider, use_container_width=True)
                     else:
                         st.error(f"{provider}\n{img}", icon="❌")
 
@@ -1611,7 +1611,7 @@ elif mode == "📦 Batch Processing":
         if not GEMINI_API_KEY:
             st.error("AI Engine not configured. Please contact the administrator.", icon="🚨")
         else:
-            if st.button("⚡ Process Batch", width="stretch", key="batch_extract"):
+            if st.button("⚡ Process Batch", use_container_width=True, key="batch_extract"):
                 all_results = []
                 progress_bar = st.progress(0, text="Starting batch extraction…")
 
@@ -1711,7 +1711,7 @@ elif mode == "📦 Batch Processing":
                         file_name="batch_valuation_reports.zip",
                         mime="application/zip",
                         type="primary",
-                        width="stretch",
+                        use_container_width=True,
                     )
                 except Exception as e:
                     st.error(f"Failed to generate zip: {e}")
@@ -1788,7 +1788,7 @@ elif mode == "🔗 Chain of Title":
         if not GEMINI_API_KEY:
             st.error("AI Engine not configured. Please contact the administrator.", icon="🚨")
         else:
-            if st.button("⚡ Extract All & Build Chain", width="stretch", key="chain_extract"):
+            if st.button("⚡ Extract All & Build Chain", use_container_width=True, key="chain_extract"):
                 all_extractions = []
                 progress_bar = st.progress(0, text="Starting extraction…")
 
@@ -1937,7 +1937,7 @@ elif mode == "🔄 Format Converter":
     uploaded_pdf = st.file_uploader("Upload Scanned Report (.pdf)", type=["pdf"], key="converter_upload")
     
     if uploaded_pdf:
-        if st.button("🚀 Run Format Conversion", width="stretch"):
+        if st.button("🚀 Run Format Conversion", use_container_width=True):
             # 1. Convert PDF to Images
             with st.spinner("📄 Rasterizing PDF into high-res images..."):
                 pdf_bytes = uploaded_pdf.read()
@@ -1964,6 +1964,6 @@ elif mode == "🔄 Format Converter":
                     data=excel_buffer,
                     file_name=f"{sanitize_filename(extracted_data.get('owner_name', 'Converted_Report'))}_Axis_Format.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    width="stretch",
+                    use_container_width=True,
                 )
     st.markdown('</div>', unsafe_allow_html=True)
