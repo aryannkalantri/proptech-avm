@@ -246,32 +246,88 @@ Extract these exact keys:
 """
 
 TRUTH_ENGINE_DISCREPANCY_PROMPT = """
-You are a Senior Risk Officer at a Bank. I am giving you two things:
-1. The structured JSON data extracted from the legal property deed.
-2. The handwritten site visit sketch/notes from our field valuer (which may be in English or Hinglish).
+You are a Senior Risk Officer at an Indian Bank performing a property valuation verification.
 
-Your job is to compare the legal deed data against the actual ground reality from the field sketch and find ANY AND ALL discrepancies, risks, or mismatches. 
+I will give you:
+1. Structured JSON extracted from the LEGAL PROPERTY DEED.
+2. A handwritten SITE VISIT SKETCH / NOTES from our field runner (may be in English or Hinglish).
 
-Do not limit yourself to just area or boundaries. Look for:
-- Mismatched land sizes or property dimensions.
-- Boundary neighbors that don't match (e.g., Deed says North is "Empty Plot", Sketch says "3-Story Building").
-- Mentions of illegal extensions, encroachments, or unauthorized occupation.
-- Property type mismatches (Deed says Residential, Sketch says Commercial usage).
-- Floor count discrepancies (e.g., Unapproved floors built).
-- Any other physical risks noted by the runner.
+═══════════════════════════════════════════════════════
+CRITICAL: INDIAN REAL ESTATE SKETCH READING RULES
+═══════════════════════════════════════════════════════
 
-Return a STRICT JSON object in this exact format. If no discrepancies are found, return an empty array for "discrepancies". Do NOT return markdown.
+You MUST follow these domain-specific rules when reading the sketch:
+
+LANDMARKS vs STRUCTURES:
+- Names like "Kanha Shyam Temple", "Ganesh Mandir", "XYZ School" written at the EDGE or OUTSIDE the boundary box are LANDMARKS used for navigation. They are NOT structures on the property. Never flag a landmark as a usage mismatch.
+- Only structures DRAWN INSIDE the plot boundary rectangle are actual constructions on the property.
+
+ROOF TYPES ≠ SEPARATE FLOORS:
+- Indian sketches often note multiple roof types on the SAME LEVEL: "Tin Shed", "RCC", "Asbestos Sheet", "Tile Roof". These describe the MATERIAL of the roof covering, NOT separate floors.
+- Only count a "floor" if the sketch explicitly labels it (e.g., "First Floor", "1st Floor", "F.F.", "Ground Floor", "G.F.", "Second Floor").
+- A single structure can have half RCC roof and half Tin Shed roof — that is still ONE floor.
+
+DIMENSIONS:
+- The outer rectangle in the sketch represents the PLOT boundary.
+- Dimensions written along the edges (e.g., "176m", "133m", "102m") are the PLOT dimensions in meters.
+- If the plot is irregular (trapezoid), there will be different lengths on opposite sides.
+
+CONSTRUCTION PERCENTAGE:
+- Percentage like "35%" means the plot is 35% covered with built structures. The rest is open land.
+
+OCCUPANCY:
+- "Self" means self-occupied. "Kirayedar" or "Rent" means rented out.
+
+═══════════════════════════════════════════════════════
+OUTPUT REQUIREMENTS
+═══════════════════════════════════════════════════════
+
+Return a STRICT JSON object. Do NOT return markdown. Keep descriptions SHORT (1-2 sentences max).
+
 {
   "risk_level": "HIGH" | "MEDIUM" | "LOW" | "NONE",
+  
+  "site_boundaries": {
+    "north": "What the sketch shows on the North side",
+    "south": "What the sketch shows on the South side",
+    "east": "What the sketch shows on the East side",
+    "west": "What the sketch shows on the West side"
+  },
+
+  "site_dimensions": {
+    "side_1": "First dimension with direction label, e.g. 'North: 176m'",
+    "side_2": "Second dimension, e.g. 'South: 133m'",
+    "side_3": "Third dimension, e.g. 'East: 102m'",
+    "side_4": "Fourth dimension, e.g. 'West: 161m'"
+  },
+
+  "site_area": "Total area noted on sketch (with unit), e.g. '8417 sq.m'",
+
+  "structures_on_plot": [
+    {
+      "name": "Structure name from sketch, e.g. 'Office'",
+      "floors": "Number of floors explicitly labeled (e.g. 'G+1')",
+      "roof_type": "Roof material noted (e.g. 'RCC', 'Tin Shed', 'Tiles')",
+      "usage": "Self / Rented / Vacant / Commercial"
+    }
+  ],
+
+  "landmark": "Nearby landmark noted by runner (e.g. 'Kanha Shyam Temple'), or 'None'",
+  
+  "construction_pct": "Construction completion % noted, or 'N/A'",
+
   "discrepancies": [
     {
-       "type": "AREA_MISMATCH" | "BOUNDARY_MISMATCH" | "ENCROACHMENT" | "USAGE_MISMATCH" | "OTHER",
-       "severity": "HIGH" | "MEDIUM" | "LOW",
-       "description": "Clear explanation of the mismatch between the legal deed and the site sketch."
+      "type": "AREA_MISMATCH" | "BOUNDARY_MISMATCH" | "DIMENSION_MISMATCH" | "ENCROACHMENT" | "UNAPPROVED_FLOORS" | "USAGE_MISMATCH" | "OTHER",
+      "severity": "HIGH" | "MEDIUM" | "LOW",
+      "deed_says": "What the legal deed states (short)",
+      "sketch_says": "What the site sketch shows (short)",
+      "risk_note": "Why this matters for valuation (1 sentence)"
     }
   ]
 }
 """
+
 
 EXTRACTION_PROMPT_FORMAT_CONVERTER = """
 You are an expert Data Extractor. Read these scanned pages of a property valuation report. 
@@ -1299,28 +1355,91 @@ if mode == "📄 Single Deed":
                 discrepancies = truth_data.get("discrepancies", [])
                 
                 if risk_level == "HIGH":
-                    st.error(f"**Overall Risk Level:** {risk_level}")
+                    st.error(f"🚨 **Overall Risk Level: {risk_level}**")
                 elif risk_level == "MEDIUM":
-                    st.warning(f"**Overall Risk Level:** {risk_level}")
+                    st.warning(f"⚠️ **Overall Risk Level: {risk_level}**")
                 else:
-                    st.success(f"**Overall Risk Level:** Clear / {risk_level}")
+                    st.success(f"✅ **Overall Risk Level: {risk_level}**")
+
+                # ── Section 1: Boundary Comparison ──
+                site_bounds = truth_data.get("site_boundaries", {})
+                if site_bounds:
+                    st.markdown("#### 🧭 Boundary Comparison")
+                    boundary_rows = []
+                    for direction in ["north", "south", "east", "west"]:
+                        deed_val = get_val(extracted, f"bound_{direction}") or "N/A"
+                        sketch_val = site_bounds.get(direction, "N/A")
+                        match = "✅" if deed_val.lower().strip() == sketch_val.lower().strip() else "⚠️"
+                        boundary_rows.append({
+                            "Direction": direction.capitalize(),
+                            "📜 Legal Deed": deed_val,
+                            "📝 Site Sketch": sketch_val,
+                            "Match": match
+                        })
+                    st.table(boundary_rows)
+                
+                # ── Section 2: Dimensions ──
+                site_dims = truth_data.get("site_dimensions", {})
+                if site_dims:
+                    st.markdown("#### 📐 Plot Dimensions (from Sketch)")
+                    dim_cols = st.columns(4)
+                    for i, (key, val) in enumerate(site_dims.items()):
+                        with dim_cols[i % 4]:
+                            st.metric(label=key.replace("_", " ").title(), value=val)
                     
+                    site_area = truth_data.get("site_area", "N/A")
+                    deed_area = get_val(extracted, "land_area") or "N/A"
+                    st.markdown(f"**📏 Area — Deed:** `{deed_area}` **|** **Sketch:** `{site_area}`")
+
+                # ── Section 3: Structures on Plot ──
+                structures = truth_data.get("structures_on_plot", [])
+                if structures:
+                    st.markdown("#### 🏗️ Structures on Plot")
+                    struct_rows = []
+                    for s in structures:
+                        struct_rows.append({
+                            "Structure": s.get("name", "N/A"),
+                            "Floors": s.get("floors", "N/A"),
+                            "Roof Type": s.get("roof_type", "N/A"),
+                            "Usage": s.get("usage", "N/A")
+                        })
+                    st.table(struct_rows)
+
+                # ── Section 4: Landmark & Construction % ──
+                col_lm, col_cp = st.columns(2)
+                with col_lm:
+                    landmark = truth_data.get("landmark", "None")
+                    if landmark and landmark != "None":
+                        st.info(f"📍 **Landmark:** {landmark}")
+                with col_cp:
+                    cpct = truth_data.get("construction_pct", "N/A")
+                    if cpct and cpct != "N/A":
+                        st.info(f"🔨 **Construction:** {cpct}")
+
+                # ── Section 5: Discrepancy Flags ──
                 if not discrepancies:
                     st.success("✅ **No discrepancies detected** between the legal deed and the field runner's sketch.")
                 else:
-                    st.markdown("#### Detected Discrepancies")
+                    st.markdown("#### 🚩 Flagged Discrepancies")
                     for d in discrepancies:
                         d_type = d.get('type', 'OTHER')
                         d_sev = d.get('severity', 'LOW')
-                        d_desc = d.get('description', '')
+                        deed_says = d.get('deed_says', d.get('description', ''))
+                        sketch_says = d.get('sketch_says', '')
+                        risk_note = d.get('risk_note', '')
                         
+                        sev_color = '#e53e3e' if d_sev == 'HIGH' else '#dd6b20' if d_sev == 'MEDIUM' else '#3182ce'
                         icon = "🔴" if d_sev == "HIGH" else "🟡" if d_sev == "MEDIUM" else "🔵"
                         
                         st.markdown(
                             f"""
-                            <div style="background-color: #fffaf0; border-left: 4px solid {'#e53e3e' if d_sev == 'HIGH' else '#dd6b20'}; padding: 1rem; margin-bottom: 0.5rem; border-radius: 4px;">
-                                <div style="font-weight: 600; font-size: 1.05rem; margin-bottom: 0.25rem;">{icon} {d_type.replace('_', ' ')}</div>
-                                <div style="color: #4a5568; font-size: 0.95rem;">{d_desc}</div>
+                            <div style="background-color: #fffaf0; border-left: 4px solid {sev_color}; padding: 1rem; margin-bottom: 0.5rem; border-radius: 4px;">
+                                <div style="font-weight: 700; font-size: 1.05rem; margin-bottom: 0.5rem;">{icon} {d_type.replace('_', ' ')}</div>
+                                <div style="display: flex; gap: 2rem; margin-bottom: 0.3rem;">
+                                    <div><strong>📜 Deed:</strong> {deed_says}</div>
+                                    <div><strong>📝 Sketch:</strong> {sketch_says}</div>
+                                </div>
+                                <div style="color: #718096; font-size: 0.9rem; font-style: italic;">{risk_note}</div>
                             </div>
                             """, 
                             unsafe_allow_html=True
